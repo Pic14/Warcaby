@@ -1,0 +1,2840 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<!-- v4: per-move 20s toggle explicit ON/OFF; default OFF; bugfixes. Previously v3: per-move 20s toggle + loss-on-time polished; help text clarified. -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Warcaby Rosyjskie — Shashki (Huff) — Plus Plus</title>
+<style>
+  :root{
+    --light: #f5f5f5;
+    --dark: #8b5a2b;
+    --board-bg: #cdb08b;
+    --accent: #1f6feb;
+    --danger: #c62828;
+    --ok: #2e7d32;
+    --hint: #7b1fa2;
+  }
+  body{
+    margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    background: #faf7f2; color:#222;
+  }
+  header{
+    padding:16px 20px; background:var(--board-bg);
+    border-bottom: 3px solid var(--dark);
+  }
+  header h1{ margin:0; font-size: 1.2rem; display:flex; align-items:center; gap:8px; }
+  .badge{
+    display:inline-block; background:#eee; border-radius:999px; padding:2px 8px; font-size:.8rem;
+  }
+  main{ display:grid; grid-template-columns: 1fr 380px; gap:18px; padding:18px; max-width: 1250px; margin:0 auto; }
+  @media (max-width: 980px){
+    main{ grid-template-columns: 1fr; }
+  }
+
+  /* Board */
+  .board-wrap{
+    display:flex; align-items:center; justify-content:center;
+  }
+  .board{
+    width: min(90vmin, 740px);
+    aspect-ratio: 1/1;
+    background: var(--board-bg);
+    border: 6px solid var(--dark);
+    box-shadow: 0 10px 25px rgba(0,0,0,.2);
+    position:relative;
+    transition: transform .25s ease;
+    transform-origin: center;
+  }
+  .board.rotated{ transform: rotate(180deg); }
+  .board.rotated .coords, .board.rotated .piece{ transform: rotate(180deg); }
+
+  .grid{
+    position:absolute; inset:0;
+    display:grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
+  }
+  .sq{
+    position:relative;
+    user-select:none;
+  }
+  .light{ background: var(--light); }
+  .dark{ background: var(--dark); }
+  .coords{
+    position:absolute; font-size:.65rem; opacity:.7; pointer-events:none;
+    color:#222; padding:2px;
+  }
+  .coords.bottom{ bottom:4px; right:6px; }
+  .coords.top{ top:4px; left:6px; }
+
+  /* Pieces */
+  .piece{
+    position:absolute;
+    width:82%; height:82%; left:9%; top:9%;
+    border-radius: 50%;
+    box-shadow: inset 0 4px 8px rgba(255,255,255,.5), inset 0 -6px 10px rgba(0,0,0,.45), 0 6px 10px rgba(0,0,0,.35);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition: transform .08s ease, opacity .08s ease;
+  }
+  .piece.hidden{ opacity:0; }
+  .piece:hover{ transform: translateY(-2px) scale(1.02); }
+  .piece.K:after{
+    content:"👑"; font-size: 1.4rem; filter: drop-shadow(0 1px 0 rgba(0,0,0,.5));
+  }
+
+  /* Highlights */
+  .hl-src{ outline: 4px solid var(--accent); }
+  .hl-dest{ box-shadow: inset 0 0 0 5px rgba(255,255,255,.25), inset 0 0 0 9px rgba(31,111,235,.65); }
+  .hl-capture{ outline: 4px solid var(--danger); }
+  .hl-hint{ box-shadow: inset 0 0 0 4px rgba(255,255,255,.2), inset 0 0 0 9px rgba(123,31,162,.75); }
+.hl-last-from{ outline: 3px solid var(--hint); }
+.hl-last-to{ outline: 3px solid var(--ok); }
+
+  /* Sidebar */
+  .side{
+    background:#fff; border:1px solid #e7dfd3; border-radius:12px; padding:14px 14px 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.08);
+  }
+  .row{ display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap; }
+  label{ font-size:.95rem; }
+  select, button, input[type="checkbox"], input[type="text"], textarea{
+    font: inherit; padding:8px 10px; border-radius:8px; border:1px solid #c8b8a3; background:#fff;
+  }
+  textarea{ width:100%; min-height: 62px; }
+  button{ cursor:pointer; }
+  button.primary{ background: var(--accent); color:#fff; border-color:#174ea6; }
+  button.danger{ background: var(--danger); color:#fff; border-color:#8b1d1d; }
+  button.ghost{ background:#fff; }
+  .muted{ color:#666; font-size:.9rem; }
+  .stats{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin:6px 0 12px; }
+  .stats .card{
+    border:1px solid #e7dfd3; border-radius:10px; padding:8px 10px; background:#fff;
+  }
+  .log{
+    max-height: 150px; overflow:auto; border:1px solid #eee; border-radius:10px; padding:8px; font-size:.92rem;
+    background: #fafafa;
+  }
+  .log p{ margin:.35rem 0; }
+  .note{ font-size:.86rem; color:#555; }
+
+  .moves{
+    max-height: 160px; overflow:auto; border:1px solid #eee; border-radius:10px; padding:8px; background:#fff;
+    font-size:.92rem; line-height:1.35;
+  }
+  .moves b{ display:inline-block; min-width: 2.1em; }
+
+  /* Floating animation piece */
+  .mover{
+    position: fixed;
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    box-shadow: inset 0 4px 8px rgba(255,255,255,.5), inset 0 -6px 10px rgba(0,0,0,.45), 0 6px 10px rgba(0,0,0,.35);
+    z-index: 9999;
+    pointer-events: none;
+    transition: left .22s linear, top .22s linear;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .mover.K:after{
+    content:"👑"; font-size: 1.4rem; filter: drop-shadow(0 1px 0 rgba(0,0,0,.5));
+  }
+
+  /* Help modal */
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index: 10000; }
+  .modal.open{ display:flex; }
+  .sheet{ background:#fff; max-width: 720px; width:92%; border-radius:12px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .sheet h2{ margin:0 0 8px; }
+  .sheet p{ margin:.5rem 0; }
+
+/* === VISUAL UPGRADE PACK === */
+:root{
+  --shadow-strong: 0 14px 30px rgba(0,0,0,.28);
+}
+
+/* More tactile wood board and squares */
+.board{
+  background: linear-gradient(160deg, #d9b48f 0%, #b88962 100%) !important;
+  border-radius: 14px;
+  box-shadow: var(--shadow-strong);
+  position: relative;
+  overflow: hidden;
+}
+/* soft vignette / spotlight */
+.board::after{
+  content:"";
+  position:absolute; inset:0;
+  background:
+    radial-gradient(65% 55% at 50% 35%, rgba(255,255,255,.22), rgba(255,255,255,0) 60%),
+    radial-gradient(120% 90% at 50% 100%, rgba(0,0,0,.28), rgba(0,0,0,0) 55%);
+  pointer-events:none;
+  mix-blend-mode: soft-light;
+}
+.vignette-off .board::after{ display:none; }
+
+/* Warstwowe "słojowanie" drewna dla pól */
+.light{
+  background:
+    linear-gradient(160deg, #f3e6d4 0%, #efe0c8 100%);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+}
+.dark{
+  background:
+    linear-gradient(160deg, #7d4f29 0%, #623a19 100%);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
+}
+
+/* Koordynaty bardziej czytelne */
+.coords{ text-shadow: 0 1px 1px rgba(255,255,255,.6); font-weight: 600; opacity:.75; }
+
+/* Glossy checkers with specular shine and soft shadow */
+.piece{
+  /* base color provided via --p */
+  background:
+    radial-gradient(35% 35% at 30% 25%, rgba(255,255,255,.85), rgba(255,255,255,.12) 48%, rgba(255,255,255,0) 50%),
+    radial-gradient(120% 90% at 50% 120%, rgba(0,0,0,.36), rgba(0,0,0,0) 58%),
+    var(--p, #ddd);
+  border: 3px solid rgba(0,0,0,.55);
+  box-shadow:
+    0 10px 16px rgba(0,0,0,.35),
+    inset 0 6px 10px rgba(255,255,255,.45),
+    inset 0 -10px 14px rgba(0,0,0,.4);
+}
+.piece::before{
+  content:"";
+  position:absolute; inset:11% 9%;
+  border-radius:50%;
+  box-shadow: 0 10px 18px rgba(0,0,0,.35);
+  opacity:.35;
+  filter: blur(1px);
+  pointer-events:none;
+}
+.piece.K:after{ text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 0 10px rgba(255,215,0,.6); }
+
+/* Animated glow for hints/destinations (toggleable) */
+@keyframes pulseGlow{
+  0%{ box-shadow: inset 0 0 0 6px rgba(255,255,255,.18), 0 0 0 0 rgba(31,111,235,.55); }
+  70%{ box-shadow: inset 0 0 0 6px rgba(255,255,255,.18), 0 0 12px 10px rgba(31,111,235,.0); }
+  100%{ box-shadow: inset 0 0 0 6px rgba(255,255,255,.18), 0 0 0 0 rgba(31,111,235,.0); }
+}
+.hl-dest{ animation: pulseGlow 1.4s ease-out infinite; }
+.hl-hint{ animation: pulseGlow 1.1s ease-out infinite; }
+.glow-off .hl-dest, .glow-off .hl-hint{ animation: none !important; }
+
+/* Sidebar slight glass look */
+.side{
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(6px);
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.12);
+}
+
+/* Buttons: micro elevation */
+button{ transition: transform .04s ease, box-shadow .18s ease; }
+button:active{ transform: translateY(1px); }
+button.primary{ box-shadow: 0 6px 14px rgba(31,111,235,.35); }
+button.danger{ box-shadow: 0 6px 14px rgba(198,40,40,.28); }
+
+/* Theme badges for header */
+header{
+  position:relative;
+  background: linear-gradient(180deg, rgba(255,255,255,.25), rgba(255,255,255,0)) , var(--board-bg);
+}
+header h1 .badge{ background: rgba(255,255,255,.6); }
+
+/* Theme helper for neon look (via CSS variables adjusted in JS) */
+body[data-theme="neon"] .board{
+  background: radial-gradient(120% 120% at 50% -10%, #23263b, #141625 55% 60%);
+}
+body[data-theme="neon"] .light{ background: linear-gradient(160deg, #2a2f4d, #1e223b); }
+body[data-theme="neon"] .dark{ background: linear-gradient(160deg, #0f1122, #090b17); }
+body[data-theme="neon"] .hl-dest,
+body[data-theme="neon"] .hl-hint{ animation-duration: 1s; }
+
+/* === Piece animation modes === */
+@keyframes hopOnce {
+  0% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-18%) scale(1.03); }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes landingBounce {
+  0% { transform: scale(1); }
+  60% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+/* trail ghost helper */
+.mover-trail {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: .35;
+  filter: blur(1.5px);
+  transition: opacity .28s ease, transform .28s ease;
+  z-index: 9998;
+}
+</style>
+
+<style id="threeD-css">
+/* === 3D camera add-on === */
+.board-wrap{
+  perspective: 1200px;
+  perspective-origin: 50% 45%;
+}
+.board{
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+/* Neutralize built-in rotate transform so we can compose it in JS */
+.board.rotated{ transform: none !important; }
+/* Keep labels and pieces readable when board is "rotated" (original behavior) */
+.board.rotated .coords, .board.rotated .piece{ transform: rotate(180deg) !important; }
+/* Slight lift on hover in 3D mode */
+body[data-3d="on"] .piece:hover{ transform: translateZ(6px) scale(1.02); }
+/* Simple UI hint badge */
+#camHint{ font-size:.85rem; opacity:.8; }
+
+/* Touch 3D controls */
+.board{ cursor: grab; touch-action: none; }
+.board.cam-drag{ cursor: grabbing; }
+
+</style>
+
+</head>
+<body>
+  <header>
+    <h1>Warcaby Rosyjskie — Shashki <span class="badge">Huff • Plus Plus</span> <span id="camHint" class="badge">3D: przeciągnij, aby obrócić</span></h1>
+  </header>
+
+  <main>
+    <section class="board-wrap">
+      <div class="board" id="board">
+        <div id="grid" class="grid"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="row">
+        <label for="mode">Tryb gry:</label>
+        <select id="mode">
+          <option value="hva">Gracz vs AI</option>
+          <option value="hvh">Gracz + Gracz (hot-seat)</option>
+          <option value="ava">AI vs AI (demo)</option>
+          <option value="mp">Multiplayer (online)</option>
+        </select>
+        <label for="aiSide">AI gra:</label>
+        <select id="aiSide">
+          <option value="black">Czarnymi</option>
+          <option value="white">Białymi</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="difficulty">Poziom trudności (AI):</label>
+        <select id="difficulty">
+          <option value="easy">Łatwy</option>
+          <option value="hard">Trudny</option>
+          <option value="extreme">Ekstremalny</option>
+          <option value="gm">Arcymistrz+</option>
+        </select>
+        <label><input type="checkbox" id="huffToggle" checked /> Reguła Huff</label>
+      </div>
+
+
+      <div class="row">
+        <label for="theme">Wygląd:</label>
+        <select id="theme">
+          <option value="classic">Klasyczny</option>
+          <option value="dark">Ciemny</option>
+          <option value="neon">Neon</option>
+        </select>
+        <label><input type="checkbox" id="vignetteToggle" checked /> Winieta</label>
+        <label><input type="checkbox" id="glowToggle" checked /> Poświata ruchów</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="camToggle" checked /> Kamera 3D</label>
+        <button id="camReset" class="ghost">Reset kamery</button>
+      </div>
+
+      <div class="row" id="mpPanel" style="display:none; border-top:1px dashed #d9cbb8; padding-top:10px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <strong>Multiplayer (P2P):</strong>
+          <label for="mpSide">Twoja strona:</label>
+          <select id="mpSide">
+            <option value="white">Białe</option>
+            <option value="black">Czarne</option>
+          </select>
+          <button id="mpHost" class="ghost" title="Utwórz pokój i wygeneruj kod">Utwórz pokój</button>
+          <button id="mpJoin" class="ghost" title="Dołącz przy użyciu kodu">Dołącz</button>
+          <span id="mpStatus" class="muted">Offline</span>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; width:100%; margin-top:8px;">
+          <div>
+            <div class="muted" style="margin-bottom:4px;">Kod do przekazania (skopiuj i wyślij przeciwnikowi):</div>
+            <textarea id="mpLocalCode" readonly placeholder="Kliknij Utwórz pokój albo Dołącz, aby wygenerować..."></textarea>
+            <button id="mpCopy" class="ghost">Kopiuj kod</button>
+          </div>
+          <div>
+            <div class="muted" style="margin-bottom:4px;">Wklej kod od przeciwnika i naciśnij <em>Ustaw</em>:</div>
+            <textarea id="mpRemoteCode" placeholder="Tutaj wklej kod od rywala..."></textarea>
+            <button id="mpSetRemote" class="ghost">Ustaw</button>
+          </div>
+        </div>
+        <p class="note" style="margin-top:6px;">Działa bez serwera (P2P WebRTC) z kopiowaniem kodów (SDP). Zalecany Chrome/Edge/Firefox. Używany STUN: <code>stun:stun.l.google.com:19302</code>.</p>
+      </div>
+
+
+      <div class="row">
+        <label for="whiteColor">Kolor Białych:</label>
+        <select id="whiteColor">
+          <option value="white">Białe</option>
+          <option value="black">Czarne</option>
+          <option value="yellow">Żółte</option>
+          <option value="blue">Niebieskie</option>
+          <option value="gray">Szare</option>
+          <option value="pink">Różowe</option>
+        </select>
+        <label for="blackColor">Kolor Czarnych:</label>
+        <select id="blackColor">
+          <option value="black">Czarne</option>
+          <option value="white">Białe</option>
+          <option value="yellow">Żółte</option>
+          <option value="blue">Niebieskie</option>
+          <option value="gray">Szare</option>
+          <option value="pink">Różowe</option>
+        </select>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button id="newGame" class="primary">Nowa partia</button>
+        <button id="undo" class="ghost">Cofnij</button>
+        <button id="rotateBtn" class="ghost">Obróć planszę</button>
+        <button id="helpBtn" class="ghost">Pomoc</button>
+      </div>
+
+      <div class="row">
+        <button id="hintBtn">Podpowiedź (AI)</button>
+        <label><input type="checkbox" id="animToggle" checked /> Animacje</label>
+        <label><input type="checkbox" id="soundToggle" checked /> Dźwięki</label>
+        <label for="animMode">Tryb animacji:</label>
+  <select id="animMode" title="Wybierz styl animacji ruchu pionka">
+    <option value="slide">Klasyczny (ślizg)</option>
+    <option value="arc">Skok łukiem</option>
+    <option value="ghost">Smuga (duch)</option>
+    <option value="elastic">Sprężysty bounce</option>
+  </select>
+</div>
+      <div class="row">
+        <label><input type="checkbox" id="forceCaptureToggle" checked /> Wymuś bicie</label>
+        <label><input type="checkbox" id="flipToMoveToggle" /> Auto-obrót do strony na ruchu</label>
+      </div>
+
+
+      <div class="row">
+        <span>Na ruch: <strong id="turnTxt">Białe (Gracz 1)</strong></span>
+      </div>
+      <div class="row">
+        <span>Czas partii: <strong id="timer">00:00:00</strong></span>
+        <span class="muted">• Remis: <span id="drawInfo">—</span></span>
+      </div>
+      <div class="row" id="clocksRow">
+        <span>Białe: <strong id="wClock">05:00</strong></span>
+        <span>Czarne: <strong id="bClock">05:00</strong></span>
+      </div>
+
+<div class="row" id="moveTimeRow" style="margin-top:6px;">
+  <label><input type="checkbox" id="moveTimeToggle" checked /> Limit ruchu 20 s <span id="moveTimeBadge" style="display:inline-block;margin-left:6px;padding:2px 6px;border-radius:4px;background:#444;color:#fff;font-size:12px;vertical-align:middle;">OFF</span></label>
+  <span>Pozostało: <strong id="moveTimeLeft">20.0 s</strong></span>
+</div>
+
+
+
+      
+<div class="row" id="chainTimeRow" style="margin-top:6px;">
+  <span>Łańcuch bicia (kolejny skok): <strong id="chainTimeLeft">—</strong></span>
+  <span class="muted">• limit: 5 s</span>
+</div>
+
+<div class="stats">
+        <div class="card">
+          <div><strong>Wygrane</strong></div>
+          <div class="muted">Razem: <span id="winsTotal">0</span></div>
+          <div class="muted">Łatwy: <span id="winsE">0</span> • Trudny: <span id="winsH">0</span> • Ekstremalny: <span id="winsX">0</span> • Arcym.: <span id="winsG">0</span></div>
+        </div>
+        <div class="card">
+          <div><strong>Przegrane</strong></div>
+          <div class="muted">Razem: <span id="lossTotal">0</span></div>
+          <div class="muted">Łatwy: <span id="lossE">0</span> • Trudny: <span id="lossH">0</span> • Ekstremalny: <span id="lossX">0</span> • Arcym.: <span id="lossG">0</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="moves" id="moves"></div>
+      </div>
+      <div class="row">
+        <button id="copyMoves" class="ghost">Kopiuj zapis</button>
+        <button id="resetStats" class="danger">Wyzeruj statystyki</button>
+        <button id="resetWins" class="ghost">Wyzeruj wygrane</button>
+        <button id="resetLosses" class="ghost">Wyzeruj przegrane</button>
+        <span id="resetStatus" style="margin-left:8px;font-size:.9rem;opacity:.9"></span>
+      </div>
+
+      <!-- === GAME HISTORY (date + duration) === -->
+      <div class="row">
+        <div class="moves" id="historyList" aria-label="Historia partii" style="max-height: 130px;"></div>
+      </div>
+      <div class="row">
+        <button id="exportHistory" class="ghost">Eksport CSV</button>
+        <button id="copyHistory" class="ghost">Kopiuj historię</button>
+        <button id="clearHistory" class="ghost">Wyczyść historię</button>
+        <span id="historyStatus" class="muted" style="margin-left:8px;"></span>
+      </div>
+      <!-- === /GAME HISTORY === -->
+
+      <div class="row">
+        <label for="posCode">Zapis/Wczytaj pozycję:</label>
+        <textarea id="posCode" placeholder="Kod pozycji (automatycznie generowany przy kopiowaniu)..."></textarea>
+      </div>
+      <div class="row">
+        <button id="savePos" class="ghost">Skopiuj pozycję</button>
+        <button id="copyPosLink" class="ghost">Skopiuj link pozycji</button>
+        <button id="loadPos" class="ghost">Wczytaj pozycję</button>
+      </div>
+
+      <div class="log" id="log" role="status" aria-live="polite"></div>
+      <p class="note">Reguła <strong>Huff</strong> (przełączalne): jeśli wykonasz zwykły ruch mając dostępne bicie, automatycznie tracisz jednego ze swoich pionków (ruch pozostaje wykonany).</p>
+      <p class="note">Remis automatyczny: <em>trzykrotne powtórzenie pozycji</em> lub <em>30 ruchów bez bicia i bez ruchu piona</em> (konfigurowalne w kodzie: <code>DRAW_HALFMOVE_LIMIT</code>).</p>
+    </aside>
+  </main>
+
+  <!-- HELP MODAL -->
+  <div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="sheet">
+      <h2 id="helpTitle">Pomoc i skróty</h2>
+      <p>• <strong>Podpowiedź</strong> podświetla najlepszy ruch AI dla aktualnej strony.</p>
+      <p>• <strong>Kopiuj zapis</strong> – kopiuje listę ruchów w notacji (np. A3-B4, A3xC5xE7). Możesz też skopiować/wczytać samą pozycję.</p>
+      <p>• <strong>Reguła Huff</strong> – można włączyć/wyłączyć. Gdy jest włączona, ruch bez bicia skutkuje utratą pionka.</p>
+      <p>• <strong>AI vs AI</strong> – tryb demonstracyjny. Zmień też kolor AI w trybie Gracz vs AI.</p>
+      <p>• <strong>Obrót planszy</strong> – tylko wizualny, współrzędne pozostają A1 w lewym dolnym rogu (od strony białych).</p>
+      <div class="row" style="justify-content:flex-end;">
+        <button id="closeHelp" class="primary">Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ------------------------------------------------------
+   Reprezentacja planszy i pomocnicze narzędzia
+   0 – puste; 1 – biały pion; 2 – biała dama; -1 – czarny pion; -2 – czarna dama
+-------------------------------------------------------*/
+const SIZE = 8;
+const WHITE = 1, WHITE_K = 2, BLACK = -1, BLACK_K = -2;
+const DRAW_HALFMOVE_LIMIT = 60; // 60 półruchów = 30 ruchów bez bicia i bez ruchu piona
+
+const COLORS = {
+  white: '#fdfdfd',
+  black: '#222',
+  yellow: '#f3d33b',
+  blue: '#3a79ff',
+  gray: '#9aa0a6',
+  pink: '#ff5fa2'
+};
+
+const state = {
+  summaryLogged: false,
+  resultCounted: false,  // ✅ licz wynik tylko raz na partię – cofanie po końcu nie zmienia statystyk
+  board: new Array(64).fill(0),
+  turn: WHITE,                 // białe zaczynają
+  whiteColorName: 'white',
+  blackColorName: 'black',
+  selected: null,              // indeks pola
+  highlight: new Set(),        // dopuszczalne cele z bieżącego wyboru
+  captureChain: null,          // {idx, captured:Set<number>, isKingNow:boolean}
+  gameOver: false,
+  difficulty: 'easy',
+  mode: 'hva',                 // 'hva' | 'hvh' | 'ava'
+  startTime: null,
+  startWallTs: null,
+  elapsedMs: 0,
+  timerId: null,
+  startOfTurnCaptures: [],     // do reguły Huff
+  logEl: null,
+  animationsEnabled: true,
+  animMode: 'slide',
+  soundsEnabled: true,
+  rotated: false,
+  aiSide: BLACK,               // domyślnie AI czarne (w hva)
+  huffEnabled: true,
+
+  // Ruchy / zapis
+  history: [],                 // stos do cofania (snapshots)
+  moveList: [],                // {side, from, path[], captures[], wasMan, promo}
+  pendingMove: null,
+
+  // Remisy i powtórzenia
+  halfmoveClock: 0,
+  posCounts: new Map(),
+
+  // Zobrist
+  zobrist: null,
+
+  forceCapture: true,
+  flipToMove: false,
+  lastMove: null,
+  clocks: {W:300000, B:300000},
+  incMs: 3000,
+  clockId: null,
+};
+
+// ------- UI INIT --------
+const grid = document.getElementById('grid');
+const boardEl = document.getElementById('board');
+const turnTxt = document.getElementById('turnTxt');
+const timerEl = document.getElementById('timer');
+const logEl = document.getElementById('log');
+const movesEl = document.getElementById('moves');
+const drawInfoEl = document.getElementById('drawInfo');
+const wClockEl = document.getElementById('wClock');
+const bClockEl = document.getElementById('bClock');
+const moveTimeLeftEl = document.getElementById('moveTimeLeft');
+const moveTimeToggleEl = document.getElementById('moveTimeToggle');
+
+state.logEl = logEl;
+
+// --- Limit czasu na ruch (20 s) ---
+state.moveTimeLimitEnabled = false;
+state.moveTimeMs = 20000;
+state.moveTimerId = null;
+state.moveTimeLeft = state.moveTimeMs;
+paintMoveTime(); paintMoveTimeStatus();
+
+try{
+  const mt = localStorage.getItem('shashki_pref_move_time');
+  if(mt!==null){ state.moveTimeLimitEnabled = (mt==='1'); }
+}catch(e){}
+
+if(typeof moveTimeToggleEl!=='undefined' && moveTimeToggleEl){ moveTimeToggleEl.checked = state.moveTimeLimitEnabled; }
+paintMoveTimeStatus();
+
+
+function paintMoveTimeStatus(){
+  const badge = document.getElementById('moveTimeBadge');
+  const cb = typeof moveTimeToggleEl!=='undefined' ? moveTimeToggleEl : null;
+  const on = !!state.moveTimeLimitEnabled;
+  if(badge){
+    badge.textContent = on ? 'ON' : 'OFF';
+    badge.style.background = on ? '#2e7d32' : '#444';
+  }
+  if(cb){
+    cb.setAttribute('aria-checked', on ? 'true' : 'false');
+    cb.setAttribute('title', on ? 'Limit 20 s: włączony' : 'Limit 20 s: wyłączony');
+  }
+}
+function paintMoveTime(){
+  if(!moveTimeLeftEl){ return; }
+  if(!state.moveTimeLimitEnabled){ moveTimeLeftEl.textContent = '—'; return; }
+  moveTimeLeftEl.textContent = (Math.max(0, state.moveTimeLeft)/1000).toFixed(1) + ' s';
+}
+
+// --- Łańcuch bicia: limit 5 s na każdy kolejny skok ---
+state.chainTimeMsPerStep = 5000;
+state.chainTimerId = null;
+state.chainTimeLeft = 0;
+
+function paintChainTime(){
+  const el = document.getElementById('chainTimeLeft');
+  if(!el){ return; }
+  if(!state.captureChain){ el.textContent = '—'; return; }
+  el.textContent = (Math.max(0, state.chainTimeLeft)/1000).toFixed(1) + ' s';
+}
+
+function stopChainTimer(){
+  if(state.chainTimerId){ clearInterval(state.chainTimerId); state.chainTimerId = null; }
+  paintChainTime();
+}
+
+function startChainTimer(){
+  stopChainTimer();
+  // Zegar dla łańcucha bicia – tylko jeśli jest aktywny łańcuch
+  if(state.gameOver || !state.captureChain){ paintChainTime(); return; }
+  state.chainTimeLeft = state.chainTimeMsPerStep;
+  paintChainTime();
+  state.chainTimerId = setInterval(()=>{
+    state.chainTimeLeft -= 100;
+    if(state.chainTimeLeft <= 0){
+      stopChainTimer();
+      onChainTimeout();
+      return;
+    }
+    paintChainTime();
+  }, 100);
+}
+
+function onChainTimeout(){
+  if(!state.captureChain) return;
+  const idxNow = state.captureChain.idx;
+  // Zastosuj karę Huff (jeśli włączona). Kara dotyczy bieżącego pionka przerywającego bicie.
+  if(state.huffEnabled){
+    const removedPiece = state.board[idxNow];
+    if(removedPiece !== 0){
+      state.board[idxNow] = 0;
+      log('HUFF! Przekroczono 5 s na kolejne bicie – usunięto pionek/ damkę z pola ' + idxToCoord(idxNow) + '.', 'bad');
+    }
+  } else {
+    log('Upłynął limit 5 s na kolejne bicie (Huff wyłączony – bez kary).', 'warn');
+  }
+  // Zakończ ruch w punkcie, w którym przerwano łańcuch
+  const beforePromo = state.board[idxNow];
+  maybePromote(idxNow);
+  if(state.pendingMove){
+    if(Math.abs(beforePromo)!==Math.abs(state.board[idxNow])){ state.pendingMove.promo = true; }
+    state.pendingMove.huff = true;
+  }
+  state.selected = null;
+  state.highlight.clear();
+  state.captureChain = null;
+  soundMove();
+  endTurnCommitPending();
+}
+
+
+
+function stopMoveTimer(){
+  if(state.moveTimerId){ clearInterval(state.moveTimerId); state.moveTimerId=null; }
+}
+
+
+function stopAllTimers(){
+  // Stop per-move, per-side and global timers safely
+  stopMoveTimer();
+  stopChainTimer();
+  if(state.timerId){ clearInterval(state.timerId); state.timerId = null; }
+  if(state.clockId){ clearInterval(state.clockId); state.clockId = null; }
+}
+function startMoveTimer(){
+  stopMoveTimer();
+  if(!state.moveTimeLimitEnabled || state.gameOver){ paintMoveTime(); paintMoveTimeStatus(); return; }
+  state.moveTimeLeft = state.moveTimeMs;
+  paintMoveTime(); paintMoveTimeStatus();
+  state.moveTimerId = setInterval(()=>{
+    state.moveTimeLeft -= 100;
+    if(state.moveTimeLeft <= 0){
+      stopMoveTimer();
+      const flagged = state.turn>0 ? 'W' : 'B';
+      gameOverOnTime(flagged);
+      return;
+    }
+    paintMoveTime();
+  }, 100);
+}
+
+if(typeof moveTimeToggleEl!=='undefined' && moveTimeToggleEl){
+  moveTimeToggleEl.addEventListener('change', ()=>{
+    state.moveTimeLimitEnabled = moveTimeToggleEl.checked;
+    try{ localStorage.setItem('shashki_pref_move_time', state.moveTimeLimitEnabled ? '1':'0'); }catch(e){}
+    paintMoveTimeStatus(); if(state.moveTimeLimitEnabled){ startMoveTimer(); runClock(); } else { stopMoveTimer(); paintMoveTime(); if(state.clockId) clearInterval(state.clockId); paintClocks(); }
+  });
+}
+
+
+// Rysuj siatkę pól
+function buildGrid(){
+  grid.innerHTML = '';
+  for(let r=0;r<SIZE;r++){
+    for(let c=0;c<SIZE;c++){
+      const idx = rc2i(r,c);
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + (((r+c)&1)?'dark':'light');
+      sq.dataset.idx = idx;
+      // współrzędne
+      if(r===7) {
+        const coords = document.createElement('div');
+        coords.className = 'coords bottom';
+        coords.textContent = String.fromCharCode(65 + c);
+        sq.appendChild(coords);
+      }
+      if(c===0){
+        const coords2 = document.createElement('div');
+        coords2.className = 'coords top';
+        coords2.textContent = (8-r);
+        sq.appendChild(coords2);
+      }
+      sq.addEventListener('click', onSquareClick);
+      grid.appendChild(sq);
+    }
+  }
+}
+buildGrid();
+
+// Narzędzia indeksowania
+function rc2i(r,c){ return r*SIZE + c; }
+function i2r(i){ return Math.floor(i/SIZE); }
+function i2c(i){ return i%SIZE; }
+function inBounds(r,c){ return r>=0 && r<SIZE && c>=0 && c<SIZE; }
+
+function cloneBoard(b){ return b.slice(0); }
+function pieceAt(b, i){ return b[i]; }
+function isWhite(p){ return p>0; }
+function isBlack(p){ return p<0; }
+function isKing(p){ return Math.abs(p)===2; }
+
+function otherSide(side){ return -side; }
+function sideName(side){
+  if(state.mode==='hvh'){
+    return side>0 ? 'Gracz 1 (Białe)' : 'Gracz 2 (Czarne)';
+  } else if(state.mode==='ava'){
+    return side>0 ? 'AI (Białe)' : 'AI (Czarne)';
+  } else {
+    const aiIs = state.aiSide>0? 'Białe':'Czarne';
+    return side>0 ? (state.mode==='hva' && state.aiSide>0 ? 'AI (Białe)' : 'Gracz (Białe)')
+                  : (state.mode==='hva' && state.aiSide<0 ? 'AI (Czarne)' : 'Gracz (Czarne)');
+  }
+}
+
+// Rysowanie pionków
+function render(){
+  // czyść pionki
+  document.querySelectorAll('.piece').forEach(el=>el.remove());
+
+  for(let i=0;i<64;i++){
+    const p = state.board[i];
+    if(p===0) continue;
+    const r = i2r(i), c = i2c(i);
+    const sq = grid.children[i];
+    const el = document.createElement('div');
+    el.className = 'piece' + (isKing(p)?' K':'');
+    el.dataset.idx = i;
+
+    const colorName = (p>0) ? state.whiteColorName : state.blackColorName;
+    el.style.setProperty('--p', COLORS[colorName]);
+    el.style.border = '3px solid rgba(0,0,0,.55)';
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      onPieceClick(i);
+    });
+    sq.appendChild(el);
+  }
+
+  // highlight
+  document.querySelectorAll('.hl-src').forEach(el=>el.classList.remove('hl-src'));
+  document.querySelectorAll('.hl-dest').forEach(el=>el.classList.remove('hl-dest'));
+  document.querySelectorAll('.hl-capture').forEach(el=>el.classList.remove('hl-capture'));
+  document.querySelectorAll('.hl-hint').forEach(el=>el.classList.remove('hl-hint'));
+  document.querySelectorAll('.hl-last-from').forEach(el=>el.classList.remove('hl-last-from'));
+  document.querySelectorAll('.hl-last-to').forEach(el=>el.classList.remove('hl-last-to'));
+
+  if(state.selected!=null){
+    grid.children[state.selected].classList.add('hl-src');
+    for(const d of state.highlight){
+      grid.children[d].classList.add('hl-dest');
+    }
+  }
+
+    if(state.lastMove){
+    const lf = state.lastMove.from, lt = state.lastMove.to;
+    if(grid.children[lf]) grid.children[lf].classList.add('hl-last-from');
+    if(grid.children[lt]) grid.children[lt].classList.add('hl-last-to');
+  }
+
+  // tura
+  turnTxt.textContent = sideName(state.turn);
+
+  paintMoves();
+}
+
+function log(msg, type='info'){
+  const p = document.createElement('p');
+  if(type==='warn') p.style.color = '#b35b00';
+  if(type==='bad') p.style.color = '#c62828';
+  if(type==='good') p.style.color = '#2e7d32';
+  p.textContent = msg;
+  state.logEl.prepend(p);
+}
+
+// ---- Dźwięki ----
+let audioCtx = null;
+function ensureAudio(){
+  if(!state.soundsEnabled) return;
+  if(!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(AC) audioCtx = new AC();
+  }
+}
+function beep(freq=440, dur=0.08){
+  if(!state.soundsEnabled) return;
+  ensureAudio();
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.frequency.value = freq;
+  o.type = 'sine';
+  o.connect(g); g.connect(audioCtx.destination);
+  g.gain.value = 0.06;
+  o.start();
+  setTimeout(()=>{ o.stop(); }, Math.floor(dur*1000));
+}
+function soundMove(){ beep(660, 0.07); }
+function soundCapture(){ beep(440, 0.12); setTimeout(()=>beep(330,0.08), 80); }
+function soundWin(){ beep(880,0.12); setTimeout(()=>beep(988,0.12),120); setTimeout(()=>beep(1046,0.12),240); }
+function soundLose(){ beep(196,0.15); setTimeout(()=>beep(174,0.12),110); }
+function soundDraw(){ beep(523,0.1); setTimeout(()=>beep(494,0.1),100); }
+
+// ---- Zobrist ----
+function rand32(){
+  // Quick 32-bit random using Math.random()
+  return (Math.random() * 0x100000000)>>>0;
+}
+function initZobrist(){
+  const piece = Array.from({length:64}, ()=>[rand32(),rand32(),rand32(),rand32()]);
+  const side = rand32();
+  state.zobrist = {piece, side};
+}
+function zobristKey(board, side){
+  if(!state.zobrist) initZobrist();
+  let h = 0;
+  for(let i=0;i<64;i++){
+    const p = board[i];
+    if(p===0) continue;
+        let t;
+    if(p===WHITE) t=0;
+    else if(p===WHITE_K) t=1;
+    else if(p===BLACK) t=2;
+    else t=3; // BLACK_K
+    h ^= state.zobrist.piece[i][t];
+  }
+  if(side<0) h ^= state.zobrist.side;
+  return String(h>>>0);
+}
+
+// ----- Notacja / ruchy -----
+function idxToCoord(i){
+  const c = 'ABCDEFGH'[i2c(i)];
+  const r = 8 - i2r(i);
+  return c + r;
+}
+function moveToNotation(mv){
+  const sep = (mv.captures && mv.captures.length>0) ? 'x' : '-';
+  const seq = [idxToCoord(mv.from), ...mv.path.map(idxToCoord)];
+  let s = seq.join(sep);
+  if(mv.promo) s += ' (damka)';
+  if(mv.huff) s += ' [Huff]';
+  return s;
+}
+function paintMoves(){
+  const ms = state.moveList;
+  if(ms.length===0){ movesEl.textContent=''; return; }
+  const parts = [];
+  for(let i=0;i<ms.length;i+=2){
+    const n = Math.floor(i/2)+1;
+    const w = ms[i];
+    const b = ms[i+1];
+    parts.push(`<b>${n}.</b> ${w?moveToNotation(w):''}${b?('   '+moveToNotation(b)) : ''}`);
+  }
+  movesEl.innerHTML = parts.join('<br/>');
+}
+
+// ------------- Snapshot / Undo / Timer -------------
+function updateTimer(){
+  const now = performance.now();
+  const total = state.elapsedMs + (state.startTime? (now - state.startTime) : 0);
+  const secs = Math.floor(total/1000);
+  const h = String(Math.floor(secs/3600)).padStart(2,'0');
+  const m = String(Math.floor((secs%3600)/60)).padStart(2,'0');
+  const s = String(secs%60).padStart(2,'0');
+  timerEl.textContent = `${h}:${m}:${s}`;
+}
+
+function paintClocks(){
+  if(!wClockEl || !bClockEl) return;
+  if(!state.moveTimeLimitEnabled){
+    wClockEl.textContent = '—';
+    bClockEl.textContent = '—';
+    return;
+  }
+  const f = (t)=>{
+    const s = Math.max(0, Math.floor(t/1000));
+    return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  };
+  wClockEl.textContent = f(state.clocks.W);
+  bClockEl.textContent = f(state.clocks.B);
+}
+
+function runClock(){
+  if(state.clockId) clearInterval(state.clockId);
+  if(state.gameOver) return;
+  if(!state.moveTimeLimitEnabled){
+    paintClocks();
+    return;
+  }
+  state.clockId = setInterval(()=>{
+    const side = state.turn>0 ? 'W' : 'B';
+    state.clocks[side] -= 200;
+    if(state.clocks[side] <= 0){
+      state.clocks[side] = 0;
+      clearInterval(state.clockId);
+      paintClocks();
+      gameOverOnTime(side);
+    } else {
+      paintClocks();
+    }
+  }, 200);
+}
+
+function gameOverOnTime(flagged){
+  if(state.gameOver) return;
+  // Normalizuj: 'W'/'B' lub liczby (WHITE=1, BLACK=-1)
+  if(typeof flagged === 'number'){
+    flagged = flagged>0 ? 'W' : 'B';
+  } else if(flagged !== 'W' && flagged !== 'B'){
+    flagged = (state.turn>0 ? 'W' : 'B');
+  }
+
+  state.gameOver = true;
+  stopAllTimers();
+
+  const loserIsWhite = (flagged === 'W');
+  const winner = loserIsWhite ? 'Czarne' : 'Białe';
+
+  // Kto wygrał z punktu widzenia człowieka?
+  let humanWon = true;
+  if(state.mode === 'hvh'){
+    humanWon = true; // gra człowiek vs człowiek – zalicz jako zwycięstwo dla człowieka
+  } else if(state.mode === 'ava'){
+    humanWon = false; // AI vs AI – nie zaliczaj człowiekowi
+  } else {
+    // human vs AI
+    const aiIsWhite = (state.aiSide > 0);
+    const aiTimedOut = (loserIsWhite && aiIsWhite) || (!loserIsWhite && !aiIsWhite);
+    humanWon = aiTimedOut; // jeśli skończył się czas AI -> człowiek wygrywa
+  }
+
+  log(`Koniec czasu dla ${loserIsWhite?'Białych':'Czarnych'}. Wygrywają ${winner}.`, humanWon?'good':'bad');
+  if(humanWon) soundWin(); else soundLose();
+  alert(`Koniec czasu dla ${loserIsWhite?'Białych':'Czarnych'}.`);
+  updateStats(humanWon);
+  recordGameSummary(humanWon ? 'win' : 'loss', 'timeout');
+}
+function pushHistory(){
+  state.history.push({
+    board: cloneBoard(state.board),
+    turn: state.turn,
+    selected: state.selected,
+    captureChain: state.captureChain? {idx: state.captureChain.idx, captured: new Set(state.captureChain.captured), isKingNow: state.captureChain.isKingNow} : null,
+    elapsedMs: state.elapsedMs + (state.startTime? (performance.now()-state.startTime):0),
+    moveListLen: state.moveList.length,
+    halfmoveClock: state.halfmoveClock,
+    posCounts: Array.from(state.posCounts.entries()),
+  });
+  if(state.history.length>300) state.history.shift();
+}
+function undo(){
+  if(state.history.length===0){ log('Brak ruchów do cofnięcia.','warn'); return; }
+  const snap = state.history.pop();
+  state.board = snap.board;
+  stopChainTimer();
+  state.turn = snap.turn;
+  state.selected = snap.selected;
+  state.captureChain = snap.captureChain;
+  state.elapsedMs = snap.elapsedMs;
+  state.startTime = performance.now();
+  state.halfmoveClock = snap.halfmoveClock;
+  state.posCounts = new Map(snap.posCounts);
+  state.moveList = state.moveList.slice(0, snap.moveListLen);
+  state.gameOver = false;
+  state.startOfTurnCaptures = listAllCaptures(state.board, state.turn);
+  render();
+  if(state.flipToMove){ boardEl.classList.toggle('rotated', state.turn<0); }
+  if(state.clockId) clearInterval(state.clockId);
+  runClock();
+  startMoveTimer();
+  paintMoveTime();
+  log('Cofnięto ruch.');
+}
+
+// -------------- Rozpocznij grę --------------
+function setupNewGame(){
+  state.summaryLogged = false;
+  state.startWallTs = Date.now();
+  state.resultCounted = false;  // resetuj licznik wyniku przy nowej partii
+  const b = new Array(64).fill(0);
+  for(let r=0;r<3;r++){
+    for(let c=0;c<8;c++){
+      if(((r+c)&1)===1){
+        b[rc2i(r,c)] = BLACK;
+      }
+    }
+  }
+  for(let r=5;r<8;r++){
+    for(let c=0;c<8;c++){
+      if(((r+c)&1)===1){
+        b[rc2i(r,c)] = WHITE;
+      }
+    }
+  }
+  state.board = b;
+  state.turn = WHITE;
+  state.selected = null;
+  state.highlight = new Set();
+  state.captureChain = null;
+  state.gameOver = false;
+  state.history = [];
+  stopChainTimer();
+  state.moveList = [];
+  state.pendingMove = null;
+  state.lastMove = null;
+  state.elapsedMs = 0;
+  if(state.timerId) clearInterval(state.timerId);
+    if(state.clockId) clearInterval(state.clockId);
+  state.startTime = performance.now();
+  state.timerId = setInterval(updateTimer, 200);
+  state.clocks = {W:300000, B:300000};
+  state.incMs = 3000;
+  if(state.clockId) clearInterval(state.clockId);
+  paintClocks();
+  runClock();
+  startMoveTimer();
+  state.startOfTurnCaptures = listAllCaptures(state.board, state.turn);
+  state.halfmoveClock = 0;
+  state.posCounts = new Map();
+  notePosition(); // startowa pozycja
+  render();
+  log('Nowa partia rozpoczęta. Powodzenia!');
+  maybeAutoAIMove();
+}
+
+// ------------- Remisy i powtórzenia -------------
+function notePosition(){
+  const key = zobristKey(state.board, state.turn);
+  const cnt = (state.posCounts.get(key) || 0) + 1;
+  state.posCounts.set(key, cnt);
+  if(cnt>=3){ state.gameOver = true; stopMoveTimer();
+    clearInterval(state.timerId);
+    if(state.clockId) clearInterval(state.clockId);
+    log('Remis: trzykrotne powtórzenie pozycji.', 'warn');
+    drawInfoEl.textContent = '3x powtórzenie';
+    soundDraw();
+    alert('Remis: 3x powtórzenie pozycji.');
+    recordGameSummary('draw', 'threefold');
+  } else {
+    drawInfoEl.textContent = (state.halfmoveClock>=DRAW_HALFMOVE_LIMIT? '30 ruchów bez bicia/piona' : `bez bicia/piona: ${Math.floor(state.halfmoveClock/2)}/${DRAW_HALFMOVE_LIMIT/2}`);
+  }
+}
+function checkHalfmoveDraw(){
+  if(state.halfmoveClock >= DRAW_HALFMOVE_LIMIT){ state.gameOver = true; stopMoveTimer();
+    clearInterval(state.timerId);
+    if(state.clockId) clearInterval(state.clockId);
+    log('Remis: 30 ruchów bez bicia i bez ruchu piona.', 'warn');
+    drawInfoEl.textContent = '30 ruchów bez bicia/piona';
+    soundDraw();
+    alert('Remis: 30 ruchów bez bicia i bez ruchu piona.');
+    recordGameSummary('draw', '30_moves_no_capture');
+    return true;
+  }
+  return false;
+}
+
+// ---------- Obsługa kliknięć ------------
+function onSquareClick(e){
+  if (window.CAM && CAM.consumeJustDragged && CAM.consumeJustDragged()) { return; }
+
+  if(state.gameOver) return;
+  if(state.mode==='ava') return; // w demo brak interakcji
+  if(state.mode==='hva' && ((state.turn===state.aiSide))) { return; } // czekaj na AI
+  const idx = Number(e.currentTarget.dataset.idx);
+
+  // przypadek: kontynuacja bicia
+  if(state.captureChain){
+    if(state.highlight.has(idx)){
+      const from = state.captureChain.idx;
+      const pieceBefore = state.board[from];
+      pushHistory();
+      const {board:newB, capturedIdx, landedIdx} = jumpOnce(state.board, from, idx);
+state.board = newB;
+state.captureChain.idx = landedIdx;
+      state.captureChain.captured.add(capturedIdx);
+      // pending move path
+      if(state.pendingMove){ state.pendingMove.path.push(idx); state.pendingMove.captures.push(capturedIdx); }
+      render();
+      animateAfterRender(from, [idx], pieceBefore);
+      if(capturedIdx!=-1){ soundCapture(); if(navigator.vibrate) navigator.vibrate(12); }
+
+      // sprawdź czy są dalsze bicia
+      const more = listCaptureStepsFrom(state.board, landedIdx, state.turn, state.captureChain.captured, state.captureChain.isKingNow);
+      if(more.length>0){
+  // Enforce remaining "maximum capture" at each step in the chain
+  const enforceMajority = state.forceCapture || !(state.captureChain && state.captureChain.isKingNow);
+  const remainingPaths = buildCapturePaths(state.board, landedIdx, state.turn, state.captureChain.captured, state.captureChain.isKingNow);
+  let maxRemain = 0;
+  for(const p of remainingPaths){ if(p.length>maxRemain) maxRemain = p.length; }
+  const allowedNext = new Set(remainingPaths.filter(p => p.length===maxRemain).map(p => p[0].to));
+  const filtered = enforceMajority ? more.filter(m => allowedNext.has(m.dest)) : more;
+
+  state.selected = landedIdx;
+  state.highlight = new Set(filtered.map(m=>m.dest));
+  render();
+  startChainTimer();
+  return;
+} else {
+        // zakończ turę gracza
+        state.selected = null;
+        state.highlight.clear();
+        const lastTo = state.captureChain.idx;
+        // promocja jeżeli dotarł do ostatniej linii (dla piona)
+        const beforePromo = state.board[lastTo];
+        maybePromote(lastTo);
+        if(state.pendingMove && Math.abs(beforePromo)!==Math.abs(state.board[lastTo])){
+          state.pendingMove.promo = true;
+        }
+        state.captureChain = null;
+        soundMove();
+        stopChainTimer();
+        endTurnCommitPending();
+        return;
+      }
+    } else {
+      return;
+    }
+  }
+
+  // jeśli nie ma aktywnego łańcucha bicia
+  if(state.selected==null){
+    const p = state.board[idx];
+    if(p===0) return;
+    if(state.turn===WHITE && !isWhite(p)) return;
+    if(state.turn===BLACK && !isBlack(p)) return;
+
+    state.selected = idx;
+    const steps = listStepsFrom(state.board, idx, state.turn);
+    state.highlight = new Set(steps.map(s=>s.dest));
+    render();
+  } else {
+    // wybór celu ruchu
+    const from = state.selected;
+    if(from===idx){ state.selected=null; state.highlight.clear(); render(); return; }
+
+    const steps = listStepsFrom(state.board, from, state.turn);
+    const step = steps.find(s=>s.dest===idx);
+    if(!step){
+      const p2 = state.board[idx];
+      if(p2!==0 && ((state.turn===WHITE && isWhite(p2)) || (state.turn===BLACK && isBlack(p2)))){
+        state.selected = idx;
+        const steps2 = listStepsFrom(state.board, idx, state.turn);
+        state.highlight = new Set(steps2.map(s=>s.dest));
+        render();
+      }
+      return;
+    }
+
+    // wykonaj ruch
+    const pieceBefore = state.board[from];
+    pushHistory();
+    if(step.kind==='move'){
+      if(state.forceCapture && state.startOfTurnCaptures && state.startOfTurnCaptures.length>0){ log('Musisz bić – bicie ma pierwszeństwo.','warn'); return; }
+      if(state.huffEnabled && state.startOfTurnCaptures.length>0){
+        applyHuffPenalty(from); // usunięcie piona
+        if(state.pendingMove){ state.pendingMove.huff = true; }
+      }
+      // start pending move
+      state.pendingMove = {side: state.turn, from, path:[idx], captures:[], wasMan: Math.abs(pieceBefore)===1, promo:false};
+      performMove(from, idx);
+      render();
+      animateAfterRender(from, [idx], pieceBefore);
+      soundMove();
+      endTurnCommitPending();
+      return;
+    } else if(step.kind==='jump'){
+      // zacznij łańcuch bicia
+      const {board:newB, capturedIdx, landedIdx} = jumpOnce(state.board, from, idx);
+state.board = newB;
+state.selected = landedIdx;
+state.captureChain = {idx: landedIdx, captured: new Set([capturedIdx]), isKingNow: isKing(state.board[landedIdx])};
+      const more = listCaptureStepsFrom(state.board, landedIdx, state.turn, state.captureChain.captured, state.captureChain.isKingNow);
+      state.highlight = new Set(more.map(m=>m.dest));
+      if(more.length>0){ startChainTimer(); }
+      // start pending move
+      state.pendingMove = {side: state.turn, from, path:[idx], captures:[capturedIdx], wasMan: Math.abs(pieceBefore)===1, promo:false};
+      render();
+      animateAfterRender(from, [idx], pieceBefore);
+      if(capturedIdx!=-1){ soundCapture(); if(navigator.vibrate) navigator.vibrate(12); }
+      if(more.length===0){
+        const beforePromo = state.board[landedIdx];
+        state.selected = null; state.highlight.clear();
+        maybePromote(landedIdx);
+        if(Math.abs(beforePromo)!==Math.abs(state.board[landedIdx])){
+          state.pendingMove.promo = true;
+        }
+        soundMove();
+        state.captureChain=null;
+        stopChainTimer();
+        endTurnCommitPending();
+      }
+    }
+  }
+}
+
+function endTurnCommitPending(){
+  stopMoveTimer();
+  stopChainTimer();
+  const mv = state.pendingMove;
+  state.pendingMove = null;
+  // last move highlight + time increment
+  if(mv){
+    const lastDest = (mv.path && mv.path.length>0) ? mv.path[mv.path.length-1] : mv.from;
+    state.lastMove = {from: mv.from, to: lastDest};
+    const finished = mv.side>0 ? 'W' : 'B';
+    state.clocks[finished] += state.incMs;
+  }
+  // halfmove clock
+  if(mv){
+
+    if((mv.captures && mv.captures.length>0) || mv.wasMan){
+      state.halfmoveClock = 0;
+    } else {
+      state.halfmoveClock++;
+    }
+    state.moveList.push(mv);
+  }
+  endTurn();
+}
+
+function onPieceClick(idx){
+  const sq = grid.children[idx];
+  onSquareClick({ currentTarget: sq });
+}
+
+// --- wykonania ruchów (bez AI) ---
+function performMove(from, to){
+  const p = state.board[from];
+  state.board[to] = p;
+  state.board[from] = 0;
+  maybePromote(to);
+  state.selected = null;
+  state.highlight.clear();
+}
+
+function maybePromote(idx){
+  const r = i2r(idx);
+  const p = state.board[idx];
+  if(p===WHITE && r===0){ state.board[idx]=WHITE_K; }
+  if(p===BLACK && r===7){ state.board[idx]=BLACK_K; }
+}
+
+/* Wykonuje jeden skok (część łańcucha); zwraca nowe board oraz informacje */
+function jumpOnce(board, from, to){
+  const newB = cloneBoard(board);
+  const fr = i2r(from), fc=i2c(from), tr=i2r(to), tc=i2c(to);
+  const p = newB[from];
+  newB[from]=0;
+
+  let capturedIdx = -1;
+  if(isKing(p)){
+    const dr = Math.sign(tr-fr), dc = Math.sign(tc-fc);
+    let r=fr+dr, c=fc+dc;
+    while(r!==tr && c!==tc){
+      const idx = rc2i(r,c);
+      if(newB[idx]!==0){
+        capturedIdx = idx; break;
+      }
+      r+=dr; c+=dc;
+    }
+  } else {
+    const mr = (fr+tr)/2, mc = (fc+tc)/2;
+    capturedIdx = rc2i(mr, mc);
+  }
+  const capturedPiece = newB[capturedIdx];
+  newB[capturedIdx]=0;
+
+  // --- RUSSIAN SHASHKI RULE ---
+  // No promotion during a capture sequence for men.
+  // Promotion is applied ONLY at the end of the whole move (handled elsewhere).
+  let landedPiece = p;
+  let becameKing = false;
+  newB[to] = landedPiece;
+
+  return {board:newB, capturedIdx, landedIdx: to, becameKing};
+}
+
+// --------- Generowanie ruchów dla UI (pojedynczy krok) ----------
+function listStepsFrom(board, idx, side){
+  const p = board[idx];
+  if(p===0) return [];
+  const steps = [];
+
+  // --- Enforce MAJORITY (maximum) capture for the FIRST jump (Russian shashki rule) ---
+  const immediateJumps = listCaptureStepsFrom(board, idx, side, new Set(), isKing(p));
+  if(immediateJumps.length>0){
+    // Build *complete* capture paths from this square
+    const paths = buildCapturePaths(board, idx, side, new Set(), isKing(p));
+    let maxLen = 0;
+    for(const path of paths){ if(path.length>maxLen) maxLen = path.length; }
+    const enforceMajority = state.forceCapture || !isKing(p);
+  let allowedFirstDests = new Set(paths.filter(path => path.length===maxLen).map(path => path[0].to));
+  if(!enforceMajority){ allowedFirstDests = new Set(immediateJumps.map(j => j.dest)); }
+    for(const j of immediateJumps){
+      if(allowedFirstDests.has(j.dest)){
+        steps.push({kind:'jump', dest:j.dest});
+      }
+    }
+  }
+
+  
+  // --- Force-capture UI guard ---
+  // If the global toggle "Wymuś bicie" is ON and there exists ANY capture at the start of this turn,
+  // do not show quiet moves from this piece (pionek or damka). This makes the UI consistent with the
+  // runtime check that already blocks such moves.
+  if (typeof state !== 'undefined' && state && state.forceCapture && state.startOfTurnCaptures && state.startOfTurnCaptures.length > 0) {
+    return steps; // only jumps (if any) remain
+  }
+
+// --- Normal moves (still shown – Huff can penalize skipping a capture) ---
+  if(isKing(p)){
+    const dirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+    for(const [dr,dc] of dirs){
+      let r=i2r(idx)+dr, c=i2c(idx)+dc;
+      while(inBounds(r,c) && board[rc2i(r,c)]===0){
+        steps.push({kind:'move', dest: rc2i(r,c)});
+        r+=dr; c+=dc;
+      }
+    }
+  } else {
+    const dr = (isWhite(p)? -1 : 1);
+    for(const [drr,dcc] of [[dr,1],[dr,-1]]){
+      const r=i2r(idx)+drr, c=i2c(idx)+dcc;
+      if(inBounds(r,c)){
+        const di = rc2i(r,c);
+        if(board[di]===0) steps.push({kind:'move', dest: di});
+      }
+    }
+  }
+  return steps;
+}
+
+function listCaptureStepsFrom(board, idx, side, capturedSet, isKingNow){
+  const p = board[idx];
+  const isK = isKingNow ?? isKing(p);
+  const res = [];
+  if(isK){
+    const dirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+    for(const [dr,dc] of dirs){
+      let r=i2r(idx)+dr, c=i2c(idx)+dc;
+      let enemyIdx = -1;
+      while(inBounds(r,c)){
+        const ii = rc2i(r,c);
+        if(board[ii]===0){
+          if(enemyIdx!==-1){
+            res.push({kind:'jump', dest: ii, captured: enemyIdx});
+          }
+          r+=dr; c+=dc; continue;
+        } else {
+          const pp = board[ii];
+          if((side>0 && pp<0) || (side<0 && pp>0)){
+            if(enemyIdx===-1 && !capturedSet.has(ii)){
+              enemyIdx = ii;
+              r+=dr; c+=dc;
+              continue;
+            } else {
+              break;
+            }
+          } else {
+            break;
+          }
+        }
+      }
+    }
+  } else {
+    const dirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+    for(const [dr,dc] of dirs){
+      const r1 = i2r(idx)+dr, c1=i2c(idx)+dc;
+      const r2 = i2r(idx)+2*dr, c2=i2c(idx)+2*dc;
+      if(!inBounds(r2,c2) || !inBounds(r1,c1)) continue;
+      const mid = rc2i(r1,c1), dst = rc2i(r2,c2);
+      if(board[mid]!==0 && ((side>0 && board[mid]<0) || (side<0 && board[mid]>0)) && board[dst]===0 && !capturedSet.has(mid)){
+        res.push({kind:'jump', dest: dst, captured: mid});
+      }
+    }
+  }
+  return res;
+}
+
+// --------- Generowanie pełnych ruchów (dla AI) ---------
+function listAllMoves(board, side){
+  const moves = [];
+  const captures = listAllCaptures(board, side);
+  if(captures.length>0) return captures; // bicia mają pierwszeństwo
+  // zwykłe ruchy
+  for(let i=0;i<64;i++){
+    const p = board[i]; if(p===0) continue;
+    if(side>0 && p<0) continue;
+    if(side<0 && p>0) continue;
+    if(isKing(p)){
+      const dirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+      for(const [dr,dc] of dirs){
+        let r=i2r(i)+dr, c=i2c(i)+dc;
+        while(inBounds(r,c)){
+          const ii = rc2i(r,c);
+          if(board[ii]!==0) break;
+          moves.push({from:i, to:ii, captures:[], path:[ii]});
+          r+=dr; c+=dc;
+        }
+      }
+    } else {
+      const dr = (isWhite(p)? -1 : 1);
+      for(const [drr, dcc] of [[dr,1],[dr,-1]]){
+        const r=i2r(i)+drr, c=i2c(i)+dcc;
+        if(inBounds(r,c)){
+          const ii = rc2i(r,c);
+          if(board[ii]===0) moves.push({from:i, to:ii, captures:[], path:[ii]});
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+function listAllCaptures(board, side){
+  let all = [];
+  for (let i = 0; i < 64; i++) {
+    const p = board[i]; if (p === 0) continue;
+    if (side > 0 && p < 0) continue;
+    if (side < 0 && p > 0) continue;
+    const paths = buildCapturePaths(board, i, side, new Set(), isKing(p));
+    for (const path of paths) {
+      all.push({from:i, to:path[path.length-1].to, captures: path.map(s=>s.captured), path: path.map(s=>s.to), sequence:path});
+    }
+  }
+  if (all.length > 0 && typeof state !== 'undefined' && state && state.forceCapture) {
+    const maxC = Math.max(...all.map(m => m.captures.length));
+    all = all.filter(m => m.captures.length === maxC);
+  }
+  return all;
+}
+
+function buildCapturePaths(board, from, side, capturedSet, isKingNow){
+  const steps = listCaptureStepsFrom(board, from, side, capturedSet, isKingNow);
+  if(steps.length===0) return [];
+  let paths = [];
+  for(const st of steps){
+    const {board: b2, capturedIdx, landedIdx} = jumpOnce(board, from, st.dest);
+const newCaptured = new Set(capturedSet); newCaptured.add(capturedIdx);
+const more = buildCapturePaths(b2, landedIdx, side, newCaptured, isKing(b2[landedIdx]));
+    if(more.length===0){
+      paths.push([{to: st.dest, captured: capturedIdx}]);
+    } else {
+      for(const tail of more){
+        paths.push([{to: st.dest, captured: capturedIdx}, ...tail]);
+      }
+    }
+  }
+  return paths;
+}
+
+// -------------- Reguła HUFF --------------
+function applyHuffPenalty(lastMovedFromIdx){
+  if(!state.huffEnabled) return;
+  const movedInList = state.startOfTurnCaptures.find(m => m.from===lastMovedFromIdx);
+  let removedIdx = -1;
+  if(movedInList){
+    removedIdx = lastMovedFromIdx;
+  } else {
+    removedIdx = state.startOfTurnCaptures[0].from;
+  }
+  const removedPiece = state.board[removedIdx];
+  if(removedPiece!==0){
+    state.board[removedIdx] = 0;
+    log(`HUFF! Kara za niewykonanie bicia – usunięto ${isKing(removedPiece)?'damkę':'pionek'}.`, 'bad');
+  }
+}
+
+// -------------- Zmiana tury -------------
+function endTurn()
+{
+  stopMoveTimer();
+  stopChainTimer();
+  state.turn = otherSide(state.turn);
+  if(state.flipToMove){ boardEl.classList.toggle('rotated', state.turn<0); }
+  state.startOfTurnCaptures = listAllCaptures(state.board, state.turn);
+
+  render();
+
+  if(!state.gameOver){
+    if(checkHalfmoveDraw()) return;
+    notePosition();
+    checkGameEndAndMaybeContinue();
+  }
+
+  if(!state.gameOver){
+    startMoveTimer();
+    runClock();
+  } else {
+    stopMoveTimer();
+  }
+}
+
+
+
+function checkGameEndAndMaybeContinue(){
+  const side = state.turn;
+  const moves = listAllMoves(state.board, side);
+  if(moves.length===0){
+    if(state.gameOver) return;
+    state.gameOver = true;
+    stopAllTimers();
+    const winnerSide = otherSide(side);
+    const humanWon = (state.mode==='hvh') ? true : (state.mode==='ava' ? false : (winnerSide !== state.aiSide));
+    log(humanWon ? 'Koniec! Wygrana.' : 'Koniec! Przegrana.', humanWon?'good':'bad');
+    if(humanWon) soundWin(); else soundLose();
+    alert(humanWon ? 'Wygrana! 🎉' : 'Przegrana. 😿');
+    updateStats(humanWon);
+    recordGameSummary(humanWon ? 'win' : 'loss', 'no_moves');
+    return;
+  }
+  maybeAutoAIMove();
+}
+
+function maybeAutoAIMMoveFor(side){
+  // schedule AI move for a given side
+  setTimeout(()=>aiMove(), 200);
+}
+
+function maybeAutoAIMove(){
+  if(state.mode==='ava'){
+    setTimeout(()=>aiMove(), 220);
+  } else if(state.mode==='hva' && state.turn===state.aiSide){
+    setTimeout(()=>aiMove(), 220);
+  }
+}
+
+function updateStats(humanWon){
+  // Zliczaj zwycięstwo/przegraną tylko raz na partię
+  if (state.resultCounted) { return; }
+  state.resultCounted = true;
+const diff = state.difficulty;
+  const stats = loadStats();
+  if(humanWon) stats.wins[diff]++; else stats.losses[diff]++;
+  saveStats(stats);
+  paintStats();
+}
+
+function loadStats(){
+  const raw = localStorage.getItem('shashki_stats_v4');
+  if(raw){
+    try{ return JSON.parse(raw); }catch{}
+  }
+  return { wins: {easy:0, hard:0, extreme:0, gm:0}, losses:{easy:0, hard:0, extreme:0, gm:0} };
+}
+function saveStats(s){ localStorage.setItem('shashki_stats_v4', JSON.stringify(s)); }
+function paintStats(){
+  const s = loadStats();
+  const wT = s.wins.easy + s.wins.hard + s.wins.extreme + s.wins.gm;
+  const lT = s.losses.easy + s.losses.hard + s.losses.extreme + s.losses.gm;
+  document.getElementById('winsTotal').textContent = wT;
+  document.getElementById('lossTotal').textContent = lT;
+  document.getElementById('winsE').textContent = s.wins.easy;
+  document.getElementById('winsH').textContent = s.wins.hard;
+  document.getElementById('winsX').textContent = s.wins.extreme;
+  document.getElementById('winsG').textContent = s.wins.gm;
+  document.getElementById('lossE').textContent = s.losses.easy;
+  document.getElementById('lossH').textContent = s.losses.hard;
+  document.getElementById('lossX').textContent = s.losses.extreme;
+  document.getElementById('lossG').textContent = s.losses.gm;
+}
+
+
+// === GAME HISTORY (Date + Duration) ===
+function loadHistory(){
+  const raw = localStorage.getItem('shashki_history_v1');
+  if(raw){ try { return JSON.parse(raw); } catch(e){} }
+  return [];
+}
+function saveHistory(h){
+  localStorage.setItem('shashki_history_v1', JSON.stringify(h));
+}
+
+function formatDate(ts){
+  const d = new Date(ts);
+  const pad = (n)=> String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function formatDuration(ms){
+  const s = Math.floor(Math.max(0, ms)/1000);
+  const h = String(Math.floor(s/3600)).padStart(2,'0');
+  const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const ss = String(s%60).padStart(2,'0');
+  return h+':'+m+':'+ss;
+}
+
+function recordGameSummary(result, reason){
+  if(state.summaryLogged) return;
+  state.summaryLogged = true;
+  const endTs = Date.now();
+  const durMs = state.elapsedMs + (state.startTime ? (performance.now()-state.startTime) : 0);
+  const rec = {
+    date: state.startWallTs || endTs,
+    durationMs: Math.floor(durMs),
+    result: result,           // 'win' | 'loss' | 'draw'
+    reason: reason || '',
+    difficulty: state.difficulty,
+    mode: state.mode,
+    aiSide: state.aiSide>0 ? 'white' : 'black'
+  };
+  const hist = loadHistory();
+  hist.push(rec);
+  if(hist.length>500) hist.splice(0, hist.length-500);
+  saveHistory(hist);
+  paintHistory();
+}
+
+function paintHistory(){
+  const box = document.getElementById('historyList');
+  if(!box) return;
+  const hist = loadHistory();
+  if(hist.length===0){
+    box.innerHTML = '<em>Brak zapisów.</em>';
+    return;
+  }
+  const last = hist.slice(-10).reverse();
+  const diffName = {easy:'Łatwy', hard:'Trudny', extreme:'Ekstremalny', gm:'Arcymistrz+'};
+  const modeName = {hva:'Gracz vs AI', hvh:'Gracz + Gracz', ava:'AI vs AI'};
+  const rows = last.map(r=>{
+    const when = formatDate(r.date);
+    const dur = formatDuration(r.durationMs);
+    const res = r.result==='win' ? 'Wygrana' : (r.result==='loss' ? 'Przegrana' : 'Remis');
+    const meta = '('+(diffName[r.difficulty]||r.difficulty)+', '+(modeName[r.mode]||r.mode)+')';
+    return `<div>${when} • ${dur} • ${res} <span class="muted">${meta}</span></div>`;
+  }).join('');
+  box.innerHTML = rows;
+}
+
+// Wire buttons (safe if elements exist)
+(function(){
+  const exportBtn = document.getElementById('exportHistory');
+  if(exportBtn){
+    exportBtn.addEventListener('click', ()=>{
+      const hist = loadHistory();
+      const header = 'data;czas_trwania;wynik;powod;poziom;tryb;ai_kolor\n';
+      const lines = hist.map(r=>[
+        formatDate(r.date),
+        formatDuration(r.durationMs),
+        r.result,
+        r.reason||'',
+        r.difficulty,
+        r.mode,
+        r.aiSide
+      ].join(';')).join('\n');
+      const csv = header + lines;
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'shashki_historia.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      const st = document.getElementById('historyStatus'); if(st){ st.textContent = 'Wyeksportowano CSV.'; setTimeout(()=>st.textContent='', 1800); }
+    });
+  }
+  const copyBtn = document.getElementById('copyHistory');
+  if(copyBtn){
+    copyBtn.addEventListener('click', async ()=>{
+      const hist = loadHistory();
+      const txt = hist.map((r,i)=> `${i+1}. ${formatDate(r.date)} • ${formatDuration(r.durationMs)} • ${r.result}`).join('\n');
+      try{ await navigator.clipboard.writeText(txt); }catch(e){}
+      const st = document.getElementById('historyStatus'); if(st){ st.textContent = 'Skopiowano.'; setTimeout(()=>st.textContent='', 1400); }
+    });
+  }
+  const clearBtn = document.getElementById('clearHistory');
+  if(clearBtn){
+    clearBtn.addEventListener('click', ()=>{
+      localStorage.removeItem('shashki_history_v1');
+      paintHistory();
+      const st = document.getElementById('historyStatus'); if(st){ st.textContent = 'Wyczyszczono.'; setTimeout(()=>st.textContent='', 1400); }
+    });
+  }
+  // initial render
+  paintHistory();
+})();
+// === /GAME HISTORY ===
+
+
+// ---- THEME / VISUALS ----
+const THEMES = {
+  classic: { light:'#f5f1e8', dark:'#7a4b24', board:'#caa57f', accent:'#1f6feb', danger:'#c62828', ok:'#2e7d32', hint:'#7b1fa2' },
+  dark:    { light:'#ede7df', dark:'#3a3a3a', board:'#5e5a57', accent:'#90caf9', danger:'#ef5350', ok:'#66bb6a', hint:'#ce93d8' },
+  neon:    { light:'#2a2f4d', dark:'#0b0e1f', board:'#1a1d31', accent:'#72f1b8', danger:'#ff5c93', ok:'#78ffcb', hint:'#8a7dff' },
+};
+
+function applyTheme(name){
+  const t = THEMES[name] || THEMES.classic;
+  const root = document.documentElement;
+  root.style.setProperty('--light', t.light);
+  root.style.setProperty('--dark', t.dark);
+  root.style.setProperty('--board-bg', t.board);
+  root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--danger', t.danger);
+  root.style.setProperty('--ok', t.ok);
+  root.style.setProperty('--hint', t.hint);
+  document.body.setAttribute('data-theme', name);
+  localStorage.setItem('shashki_pref_theme', name);
+}
+
+// Toggles
+function setVignetteEnabled(on){
+  document.body.classList.toggle('vignette-off', !on);
+  localStorage.setItem('shashki_pref_vignette', on ? 1 : 0);
+}
+function setGlowEnabled(on){
+  document.body.classList.toggle('glow-off', !on);
+  localStorage.setItem('shashki_pref_glow', on ? 1 : 0);
+}
+
+// ----------------- AI (minimax + TT) --------------
+const TT = new Map(); // transposition table (key -> {depth, value, flag, best})
+function ttKey(board, side){ return zobristKey(board, side); }
+
+function aiMove(){ if(state.gameOver) return;
+  const __t0 = performance.now();
+  const depth = state.difficulty==='easy' ? 2
+               : state.difficulty==='hard' ? 4
+               : state.difficulty==='extreme' ? 6
+               : 8; // Arcymistrz+
+  const side = state.turn;
+
+  state.startOfTurnCaptures = listAllCaptures(state.board, side);
+
+  pushHistory();
+  const {move} = searchBestMove(state.board, side, depth);
+  const __elapsed = performance.now() - __t0;
+  if(state.moveTimeLimitEnabled && __elapsed > state.moveTimeMs){
+    stopMoveTimer();
+    const flagged = side>0 ? 'W' : 'B';
+    gameOverOnTime(flagged);
+    return;
+  }
+  if(!move){
+    // brak ruchu – zakończy to checkGameEndAndMaybeContinue przy następnym kroku
+    state.turn = otherSide(state.turn);
+    checkGameEndAndMaybeContinue();
+    return;
+  }
+
+  const pieceBefore = state.board[move.from];
+  applyMoveObject(move);
+
+  render();
+  animateAfterRender(move.from, move.path, pieceBefore);
+  if(move.captures && move.captures.length>0){ soundCapture(); if(navigator.vibrate) navigator.vibrate(12); }
+  soundMove();
+
+  // commit move to moveList
+  const promo = (Math.abs(pieceBefore)!==Math.abs(state.board[move.to]));
+  state.moveList.push({side, from: move.from, path: move.path.slice(), captures: move.captures.slice(), wasMan: Math.abs(pieceBefore)===1, promo});
+
+  // halfmove
+  if((move.captures && move.captures.length>0) || Math.abs(pieceBefore)===1){
+    state.halfmoveClock = 0;
+  } else state.halfmoveClock++;
+
+  state.turn = otherSide(state.turn);
+  state.startOfTurnCaptures = listAllCaptures(state.board, state.turn);
+  render();
+  if(!state.gameOver){
+    if(checkHalfmoveDraw()) return;
+    notePosition();
+    checkGameEndAndMaybeContinue();
+  }
+}
+
+function applyMoveObject(move){
+  const b = state.board;
+  const p = b[move.from];
+  b[move.from]=0;
+  b[move.to] = p;
+  for(const ci of move.captures){
+    if(b[ci]!==0) b[ci]=0;
+  }
+  const r = i2r(move.to);
+  if(p===WHITE && r===0) b[move.to]=WHITE_K;
+  if(p===BLACK && r===7) b[move.to]=BLACK_K;
+}
+
+function searchBestMove(board, side, depth){
+  let bestScore = -Infinity, bestMove = null;
+  let moves = listAllMoves(board, side);
+  // porządkowanie: preferuj większe bicia
+  moves.sort((a,b)=> (b.captures.length||0)-(a.captures.length||0));
+  // jeżeli TT ma ruch – daj go na początek
+  const key = ttKey(board, side);
+  const tt = TT.get(key);
+  if(tt && tt.best){
+    moves.sort((m)=> (m.from===tt.best.from && m.to===tt.best.to ? -1 : 1));
+  }
+  for(const mv of moves){
+    const b2 = applyMove(board, mv);
+    const score = -negamax(b2, -side, depth-1, -Infinity, Infinity);
+    if(score>bestScore){ bestScore=score; bestMove=mv; }
+  }
+  return {score: bestScore, move: bestMove};
+}
+
+function negamax(board, side, depth, alpha, beta){
+  const alphaOrig = alpha;
+  const key = ttKey(board, side);
+  const tt = TT.get(key);
+  if(tt && tt.depth >= depth){
+    if(tt.flag==='EXACT') return tt.value;
+    if(tt.flag==='LOWER') alpha = Math.max(alpha, tt.value);
+    else if(tt.flag==='UPPER') beta = Math.min(beta, tt.value);
+    if(alpha>=beta) return tt.value;
+  }
+
+  if(depth===0) return evaluate(board, side);
+
+  const moves = listAllMoves(board, side);
+  if(moves.length===0){
+    return -99999 + material(board, side)*0.01;
+  }
+
+  // move-ordering: TT move first
+  if(tt && tt.best){
+    moves.sort((m)=> (m.from===tt.best.from && m.to===tt.best.to ? -1 : 1));
+  } else {
+    moves.sort((a,b)=> (b.captures.length||0)-(a.captures.length||0));
+  }
+
+  let value = -Infinity;
+  let bestLocal = null;
+  for(const mv of moves){
+    const b2 = applyMove(board, mv);
+    const score = -negamax(b2, -side, depth-1, -beta, -alpha);
+    if(score>value){ value = score; bestLocal = mv; }
+    alpha = Math.max(alpha, score);
+    if(alpha>=beta) break;
+  }
+
+  // zapis do TT
+  let flag = 'EXACT';
+  if(value <= alphaOrig) flag = 'UPPER';
+  else if(value >= beta) flag = 'LOWER';
+  TT.set(key, {depth, value, flag, best: bestLocal});
+
+  return value;
+}
+
+function applyMove(board, mv){
+  const b2 = cloneBoard(board);
+  const p = b2[mv.from];
+  b2[mv.from]=0;
+  b2[mv.to]=p;
+  for(const ci of mv.captures) b2[ci]=0;
+  const r = Math.floor(mv.to/8);
+  if(p===WHITE && r===0) b2[mv.to]=WHITE_K;
+  if(p===BLACK && r===7) b2[mv.to]=BLACK_K;
+  return b2;
+}
+
+function evaluate(board, side){
+  const mat = material(board, side);
+  const mob = mobility(board, side) - mobility(board, -side);
+  const center = centerControl(board, side) - centerControl(board, -side);
+  return mat*10 + mob*0.5 + center*0.2;
+}
+function material(board, side){
+  let s=0;
+  for(const p of board){
+    if(p===0) continue;
+    const val = (Math.abs(p)===2)? 3.2 : 1;
+    s += ( (p*side>0) ? val : -val );
+  }
+  return s;
+}
+function mobility(board, side){
+  return listAllMoves(board, side).length;
+}
+function centerControl(board, side){
+  let score=0;
+  for(let r=2;r<=5;r++){
+    for(let c=2;c<=5;c++){
+      const p = board[rc2i(r,c)];
+      if(p===0) continue;
+      score += ( (p*side>0) ? 1 : -1 );
+    }
+  }
+  return score;
+}
+
+// --------------- ANIMACJE -----------------
+function squareRect(idx){
+  const sq = grid.children[idx];
+  const r1 = sq.getBoundingClientRect();
+  return r1;
+}
+
+function pieceStyle(p){
+  const colorName = (p>0) ? state.whiteColorName : state.blackColorName;
+  const bg = COLORS[colorName];
+  const isK = isKing(p);
+  return {bg, isK};
+}
+
+function animateAfterRender(from, path, pieceVal){
+  if(!state.animationsEnabled) return;
+  if(!path || path.length===0) return;
+
+  const finalIdx = path[path.length-1];
+  const finalSq = grid.children[finalIdx];
+  const finalPiece = finalSq.querySelector('.piece');
+  if(finalPiece) finalPiece.classList.add('hidden');
+
+  const startRect = squareRect(from);
+  const {bg, isK} = pieceStyle(pieceVal);
+  const mover = document.createElement('div');
+  mover.className = 'mover' + (isK ? ' K' : '');
+  mover.style.background = bg;
+  mover.style.left = (startRect.left + startRect.width*0.09) + 'px';
+  mover.style.top  = (startRect.top  + startRect.height*0.09) + 'px';
+  mover.style.width  = (startRect.width*0.82) + 'px';
+  mover.style.height = (startRect.height*0.82) + 'px';
+  document.body.appendChild(mover);
+
+  // Helper for ghost trails
+  function spawnTrailAt(rect){
+    const t = document.createElement('div');
+    t.className = 'mover-trail';
+    t.style.left = (rect.left + rect.width*0.09) + 'px';
+    t.style.top  = (rect.top  + rect.height*0.09) + 'px';
+    t.style.width  = (rect.width*0.82) + 'px';
+    t.style.height = (rect.height*0.82) + 'px';
+    t.style.background = bg;
+    if(isK){ t.textContent = '👑'; t.style.display='flex'; t.style.alignItems='center'; t.style.justifyContent='center'; }
+    document.body.appendChild(t);
+    requestAnimationFrame(()=>{
+      t.style.opacity = '0';
+      t.style.transform = 'scale(0.92)';
+      setTimeout(()=> t.remove(), 300);
+    });
+  }
+
+  let stepIdx = 0;
+  const SEG_MS = 230;
+
+  function step(){
+    if(stepIdx >= path.length){
+      setTimeout(()=>{
+        mover.remove();
+        if(finalPiece){
+          finalPiece.classList.remove('hidden');
+          // landing bounce for elastic mode
+          if(state.animMode === 'elastic'){
+            finalPiece.style.animation = 'landingBounce 220ms ease-out';
+            // clear the animation after it runs so it can be retriggered later
+            setTimeout(()=>{ finalPiece.style.animation = 'none'; }, 240);
+          }
+        }
+      }, 10);
+      return;
+    }
+
+    const nextRect = squareRect(path[stepIdx]);
+
+    // Choose per-mode behavior
+    if(state.animMode === 'slide'){
+      mover.style.transition = 'left .22s linear, top .22s linear';
+    } else if(state.animMode === 'arc'){
+      mover.style.transition = 'left .23s ease-in-out, top .23s ease-in-out';
+      mover.style.animation = 'none'; // reset
+      // force reflow to restart the animation
+      void mover.offsetWidth;
+      mover.style.animation = 'hopOnce 230ms ease-out';
+    } else if(state.animMode === 'ghost'){
+      mover.style.transition = 'left .22s ease-out, top .22s ease-out, filter .22s ease-out';
+      // spawn trailing ghost at current position
+      const curRect = nextRect; // We'll spawn a trail at the destination just before moving for stronger effect
+      spawnTrailAt(squareRect(stepIdx===0 ? from : path[stepIdx-1]));
+      // slight motion blur while moving
+      mover.style.filter = 'brightness(1.02) saturate(1.05)';
+      setTimeout(()=>{ mover.style.filter = 'none'; }, SEG_MS);
+    } else if(state.animMode === 'elastic'){
+      mover.style.transition = 'left .24s cubic-bezier(.2,.8,.2,1.2), top .24s cubic-bezier(.2,.8,.2,1.2)';
+    }
+
+    mover.style.left = (nextRect.left + nextRect.width*0.09) + 'px';
+    mover.style.top  = (nextRect.top  + nextRect.height*0.09) + 'px';
+
+    stepIdx++;
+    setTimeout(step, SEG_MS);
+  }
+
+  setTimeout(step, 20);
+}
+
+// ----------------- HINT ------------------
+let hintTimeout = null;
+function clearHint(){
+  document.querySelectorAll('.hl-hint').forEach(el=>el.classList.remove('hl-hint'));
+  if(hintTimeout){ clearTimeout(hintTimeout); hintTimeout=null; }
+}
+function showHint(){
+  clearHint();
+  if(state.gameOver) return;
+  const side = state.turn;
+  const depth = state.difficulty==='easy' ? 2
+               : state.difficulty==='hard' ? 4
+               : state.difficulty==='extreme' ? 6
+               : 8;
+  const {move} = searchBestMove(state.board, side, depth);
+  if(!move){ log('Brak dostępnych ruchów.','warn'); return; }
+  grid.children[move.from].classList.add('hl-hint');
+  for(const d of move.path){
+    grid.children[d].classList.add('hl-hint');
+  }
+  log(`Podpowiedź: ${moveToNotation({from: move.from, path: move.path, captures: move.captures||[], promo:false})}`, 'good');
+  hintTimeout = setTimeout(clearHint, 4000);
+}
+
+// ----------------- Sterowanie GUI ------------------
+document.getElementById('newGame').addEventListener('click', ()=>{ setupNewGame(); });
+document.getElementById('undo').addEventListener('click', ()=>{ undo(); });
+document.getElementById('resetStats').addEventListener('click', ()=>{
+  // Jedno kliknięcie: bez potwierdzenia, wyzeruj wygrane i przegrane
+  const empty = { wins: {easy:0, hard:0, extreme:0, gm:0}, losses: {easy:0, hard:0, extreme:0, gm:0} };
+  try{
+    localStorage.setItem('shashki_stats_v4', JSON.stringify(empty));
+  }catch(e){}
+  if (typeof paintStats === 'function') paintStats();
+  const el = document.getElementById('resetStatus');
+  if (el){ el.textContent = '✅ Wyzerowano statystyki (wygrane i przegrane)'; setTimeout(()=>{ el.textContent=''; }, 1800); }
+  if (typeof log === 'function'){ log('Wyzerowano statystyki (wygrane i przegrane).', 'warn'); }
+});
+document.getElementById('resetWins').addEventListener('click', ()=>{
+  const s = loadStats();
+  s.wins = {easy:0, hard:0, extreme:0, gm:0};
+  saveStats(s);
+  if (typeof paintStats === 'function') paintStats();
+  const el = document.getElementById('resetStatus'); if (el){ el.textContent = '✅ Wyzerowano wygrane'; setTimeout(()=>{ el.textContent=''; }, 1800); }
+});
+document.getElementById('resetLosses').addEventListener('click', ()=>{
+  const s = loadStats();
+  s.losses = {easy:0, hard:0, extreme:0, gm:0};
+  saveStats(s);
+  if (typeof paintStats === 'function') paintStats();
+  const el = document.getElementById('resetStatus'); if (el){ el.textContent = '✅ Wyzerowano przegrane'; setTimeout(()=>{ el.textContent=''; }, 1800); }
+});
+
+document.getElementById('difficulty').addEventListener('change', (e)=>{
+  state.difficulty = e.target.value;
+  localStorage.setItem('shashki_pref_difficulty', state.difficulty);
+});
+document.getElementById('whiteColor').addEventListener('change', (e)=>{
+  state.whiteColorName = e.target.value; render(); localStorage.setItem('shashki_pref_w', state.whiteColorName);
+});
+document.getElementById('blackColor').addEventListener('change', (e)=>{
+  state.blackColorName = e.target.value; render(); localStorage.setItem('shashki_pref_b', state.blackColorName);
+});
+document.getElementById('mode').addEventListener('change', (e)=>{
+  state.mode = e.target.value;
+  localStorage.setItem('shashki_pref_mode', state.mode);
+  render();
+  maybeAutoAIMove();
+});
+document.getElementById('aiSide').addEventListener('change', (e)=>{
+  state.aiSide = (e.target.value==='white')? WHITE : BLACK;
+  localStorage.setItem('shashki_pref_aiside', state.aiSide>0?'white':'black');
+  render();
+  maybeAutoAIMove();
+});
+document.getElementById('animToggle').addEventListener('change', (e)=>{
+  state.animationsEnabled = e.target.checked; localStorage.setItem('shashki_pref_anim', state.animationsEnabled?1:0);
+});
+document.getElementById('soundToggle').addEventListener('change', (e)=>{
+  state.soundsEnabled = e.target.checked; localStorage.setItem('shashki_pref_sound', state.soundsEnabled?1:0);
+});
+
+document.getElementById('animMode').addEventListener('change', (e)=>{
+  state.animMode = e.target.value;
+  localStorage.setItem('shashki_pref_anim_mode', state.animMode);
+});
+
+document.getElementById('huffToggle').addEventListener('change', (e)=>{
+  state.huffEnabled = e.target.checked; localStorage.setItem('shashki_pref_huff', state.huffEnabled?1:0);
+});
+document.getElementById('rotateBtn').addEventListener('click', ()=>{
+  state.rotated = !state.rotated;
+  boardEl.classList.toggle('rotated', state.rotated);
+});
+document.getElementById('hintBtn').addEventListener('click', ()=>{ showHint(); });
+document.getElementById('copyMoves').addEventListener('click', ()=>{
+  const numbered = state.moveList.map((mv, i)=> (i%2===0 ? ((Math.floor(i/2)+1)+'. '+moveToNotation(mv)) : moveToNotation(mv)) ).join(' ');
+  navigator.clipboard.writeText(numbered).then(()=> log('Skopiowano zapis partii do schowka.','good'));
+  // wygeneruj i uzupełnij kod pozycji (dla wygody)
+  document.getElementById('posCode').value = encodePosition();
+});
+document.getElementById('savePos').addEventListener('click', ()=>{
+  const code = encodePosition();
+  navigator.clipboard.writeText(code).then(()=> log('Skopiowano kod pozycji.','good'));
+  document.getElementById('posCode').value = code;
+});
+document.getElementById('loadPos').addEventListener('click', ()=>{
+  const code = document.getElementById('posCode').value.trim();
+  if(!code){ log('Brak kodu pozycji do wczytania.','warn'); return; }
+  const ok = decodePosition(code);
+  if(ok){ log('Pozycja wczytana.','good'); render(); notePosition(); }
+  else { log('Nieprawidłowy kod pozycji.','bad'); }
+});
+
+document.getElementById('theme').addEventListener('change', (e)=>{
+  applyTheme(e.target.value);
+});
+document.getElementById('vignetteToggle').addEventListener('change', (e)=>{
+  setVignetteEnabled(e.target.checked);
+});
+document.getElementById('glowToggle').addEventListener('change', (e)=>{
+  setGlowEnabled(e.target.checked);
+});
+
+document.getElementById('helpBtn').addEventListener('click', ()=>{
+  document.getElementById('helpModal').classList.add('open');
+});
+document.getElementById('closeHelp').addEventListener('click', ()=>{
+  document.getElementById('helpModal').classList.remove('open');
+});
+
+// ---- Init preferences for animation mode ----
+(function(){
+  const saved = localStorage.getItem('shashki_pref_anim_mode');
+  if(saved){
+    state.animMode = saved;
+    const sel = document.getElementById('animMode');
+    if(sel) sel.value = saved;
+  }
+})();
+
+
+// ----- Pozycje: zapis / wczytanie -----
+// ---- Nowe przełączniki i link pozycji ----
+;(function(){
+  const fcT = document.getElementById('forceCaptureToggle');
+  if(fcT){ fcT.addEventListener('change', e=>{ state.forceCapture = e.target.checked; localStorage.setItem('shashki_pref_forcecap', state.forceCapture?1:0); }); }
+  const ftmT = document.getElementById('flipToMoveToggle');
+  if(ftmT){ ftmT.addEventListener('change', e=>{ state.flipToMove = e.target.checked; localStorage.setItem('shashki_pref_fliptomove', state.flipToMove?1:0); if(state.flipToMove){ boardEl.classList.toggle('rotated', state.turn<0); } }); }
+  const cpl = document.getElementById('copyPosLink');
+  if(cpl){ cpl.addEventListener('click', ()=>{ const code = encodePosition(); const link = location.origin + location.pathname + '?pos=' + code; navigator.clipboard.writeText(link).then(()=> log('Skopiowano link do pozycji.','good')); document.getElementById('posCode').value = link; }); }
+})();
+
+
+function encodePosition(){
+  const obj = {b: state.board, t: state.turn, w: state.whiteColorName, k: state.blackColorName, h: state.huffEnabled?1:0};
+  const json = JSON.stringify(obj);
+  return btoa(unescape(encodeURIComponent(json)));
+}
+function decodePosition(code){
+  try{
+    const json = decodeURIComponent(escape(atob(code)));
+    const obj = JSON.parse(json);
+    if(!Array.isArray(obj.b) || obj.b.length!==64) return false;
+    state.board = obj.b.map(x=>Number(x));
+    state.turn = (obj.t===-1)?BLACK:WHITE;
+    if(obj.w && COLORS[obj.w]) state.whiteColorName = obj.w;
+    if(obj.k && COLORS[obj.k]) state.blackColorName = obj.k;
+    state.huffEnabled = !!obj.h;
+    // resety
+    state.selected=null; state.highlight.clear();
+    state.captureChain = null;
+    state.startOfTurnCaptures = listAllCaptures(state.board, state.turn);
+    state.moveList = [];
+    state.pendingMove = null;
+    state.halfmoveClock = 0;
+    state.posCounts = new Map(); // nowe liczenie od tej pozycji
+    render();
+    return true;
+  }catch(e){ return false; }
+}
+
+// ----- Prefs -----
+function loadPrefs(){
+  const w = localStorage.getItem('shashki_pref_w'); if(w && COLORS[w]) state.whiteColorName=w;
+  const b = localStorage.getItem('shashki_pref_b'); if(b && COLORS[b]) state.blackColorName=b;
+  const d = localStorage.getItem('shashki_pref_difficulty'); if(d) state.difficulty=d;
+  const m = localStorage.getItem('shashki_pref_mode'); if(m) state.mode=m;
+  const a = localStorage.getItem('shashki_pref_aiside'); if(a) state.aiSide = (a==='white')?WHITE:BLACK;
+  const an = localStorage.getItem('shashki_pref_anim'); if(an!==null) state.animationsEnabled = Number(an)===1;
+  const so = localStorage.getItem('shashki_pref_sound'); if(so!==null) state.soundsEnabled = Number(so)===1;
+  const hf = localStorage.getItem('shashki_pref_huff'); if(hf!==null) state.huffEnabled = Number(hf)===1;
+  const fc = localStorage.getItem('shashki_pref_forcecap'); if(fc!==null) state.forceCapture = Number(fc)===1;
+  const ftm = localStorage.getItem('shashki_pref_fliptomove'); if(ftm!==null) state.flipToMove = Number(ftm)===1;
+
+  const th = localStorage.getItem('shashki_pref_theme') || 'classic';
+  applyTheme(th);
+  const vg = localStorage.getItem('shashki_pref_vignette');
+  const gl = localStorage.getItem('shashki_pref_glow');
+  if(vg!==null) document.body.classList.toggle('vignette-off', Number(vg)===0);
+  if(gl!==null) document.body.classList.toggle('glow-off', Number(gl)===0);
+
+  const themeSel = document.getElementById('theme');
+  if(themeSel) themeSel.value = th;
+  const vigT = document.getElementById('vignetteToggle');
+  const glowT = document.getElementById('glowToggle');
+  if(vigT) vigT.checked = !document.body.classList.contains('vignette-off');
+  if(glowT) glowT.checked = !document.body.classList.contains('glow-off');
+
+
+  document.getElementById('whiteColor').value = state.whiteColorName;
+  document.getElementById('blackColor').value = state.blackColorName;
+  document.getElementById('difficulty').value = state.difficulty;
+  document.getElementById('mode').value = state.mode;
+  document.getElementById('aiSide').value = state.aiSide>0 ? 'white' : 'black';
+  document.getElementById('animToggle').checked = state.animationsEnabled;
+  document.getElementById('soundToggle').checked = state.soundsEnabled;
+  document.getElementById('huffToggle').checked = state.huffEnabled;
+  const fcT = document.getElementById('forceCaptureToggle'); if(fcT) fcT.checked = state.forceCapture;
+  const ftmT = document.getElementById('flipToMoveToggle'); if(ftmT) ftmT.checked = state.flipToMove;
+}
+
+// ---------------- HINT KEY (H) -----------------
+window.addEventListener('keydown', (e)=>{
+  if(e.key==='h' || e.key==='H'){ e.preventDefault(); showHint(); }
+  if(e.key==='u' || e.key==='U'){ e.preventDefault(); undo(); }
+  if(e.key==='n' || e.key==='N'){ e.preventDefault(); setupNewGame(); }
+  if(e.key==='r' || e.key==='R'){ e.preventDefault(); document.getElementById('rotateBtn').click(); }
+  if(e.key==='s' || e.key==='S'){ e.preventDefault(); document.getElementById('savePos').click(); }
+  if(e.key==='l' || e.key==='L'){ e.preventDefault(); document.getElementById('loadPos').click(); }
+});
+
+// Start
+loadPrefs();
+if(state.flipToMove){ boardEl.classList.toggle('rotated', state.turn<0); }
+
+paintStats();
+setupNewGame();
+
+
+;(function(){
+  const sel = document.getElementById('animMode');
+  if(sel && !sel.value){ sel.value = state.animMode || 'slide'; }
+})();
+
+</script>
+
+
+<script id="threeD-script">
+(function(){
+  const boardEl = document.getElementById('board');
+  const sidePanel = document.querySelector('.side');
+  if(!boardEl || !sidePanel) return;
+
+  // --- Add UI controls dynamically ---
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `
+    <label><input type="checkbox" id="threeDToggle" checked /> 3D obrót</label>
+    <button id="resetView" class="ghost">Reset kamery</button>
+    <span id="camHint" class="muted">ALT+LPM lub PPM = obrót • kółko = zoom</span>
+  `;
+  sidePanel.insertBefore(row, sidePanel.firstChild);
+
+  // State
+  const cam = {
+    enabled: true,
+    rx: -18,  // pitch
+    ry: 24,   // yaw
+    rz: 0,
+    scale: 1,
+    minRx: -70, maxRx: 70,
+    minScale: 0.75, maxScale: 1.6,
+    dragging: false,
+    start: {x:0, y:0, rx:0, ry:0, btn:0, alt:false}
+  };
+
+  // Persist / restore
+  try{
+    const saved = JSON.parse(localStorage.getItem('shashki_cam_v1')||"null");
+    if(saved && typeof saved.rx==="number"){
+      Object.assign(cam, saved);
+    }
+  }catch(e){}
+  document.body.setAttribute('data-3d', cam.enabled ? 'on' : 'off');
+  const threeDToggle = document.getElementById('threeDToggle');
+  const resetBtn = document.getElementById('resetView');
+  if(threeDToggle){ threeDToggle.checked = cam.enabled; }
+
+  // Helper: apply composed transform (camera + game flip)
+  function isRotatedClass(){
+    return boardEl.classList.contains('rotated');
+  }
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+  function applyBoardTransform(){
+    const rz = isRotatedClass() ? cam.rz + 180 : cam.rz;
+    const t = `rotateX(${cam.rx}deg) rotateY(${cam.ry}deg) rotateZ(${rz}deg) scale(${cam.scale})`;
+    boardEl.style.transform = t;
+  }
+
+  // Observe class changes (so "flip to side to move" keeps working)
+  const mo = new MutationObserver(applyBoardTransform);
+  mo.observe(boardEl, {attributes:true, attributeFilter:['class']});
+
+  // Initial apply
+  applyBoardTransform();
+
+  // Save periodically
+  function saveCam(){
+    try{ localStorage.setItem('shashki_cam_v1', JSON.stringify({
+      enabled: cam.enabled, rx: cam.rx, ry: cam.ry, rz: cam.rz, scale: cam.scale
+    })); }catch(e){}
+  }
+
+  // Pointer / wheel handlers
+  const wrap = document.querySelector('.board-wrap') || boardEl;
+
+  function startDrag(e){
+    if(!cam.enabled) return;
+    // rotate mode if: right button OR Alt key
+    const isRotate = (e.button===2) || e.altKey;
+    if(!isRotate) return;
+    // Avoid interfering with moving pieces: if clicking a piece with left click and no Alt -> ignore
+    cam.dragging = true;
+    cam.start.x = e.clientX;
+    cam.start.y = e.clientY;
+    cam.start.rx = cam.rx;
+    cam.start.ry = cam.ry;
+    cam.start.btn = e.button;
+    cam.start.alt = e.altKey;
+    e.preventDefault();
+  }
+  function moveDrag(e){
+    if(!cam.enabled || !cam.dragging) return;
+    const dx = e.clientX - cam.start.x;
+    const dy = e.clientY - cam.start.y;
+    // sensitivity
+    const kx = 0.25, ky = 0.25;
+    cam.ry = cam.start.ry + dx * kx;
+    cam.rx = clamp(cam.start.rx - dy * ky, cam.minRx, cam.maxRx);
+    applyBoardTransform();
+  }
+  function endDrag(e){
+    if(!cam.enabled) return;
+    cam.dragging = false;
+    saveCam();
+  }
+
+  wrap.addEventListener('pointerdown', startDrag);
+  window.addEventListener('pointermove', moveDrag);
+  window.addEventListener('pointerup', endDrag);
+  // Prevent context menu so right-drag is smooth
+  wrap.addEventListener('contextmenu', (e)=>{
+    if(cam.enabled) { e.preventDefault(); }
+  });
+
+  // Wheel zoom
+  wrap.addEventListener('wheel', (e)=>{
+    if(!cam.enabled) return;
+    const delta = -Math.sign(e.deltaY) * 0.06;
+    cam.scale = clamp(cam.scale + delta, cam.minScale, cam.maxScale);
+    applyBoardTransform();
+    saveCam();
+  }, {passive: false});
+
+  // Keyboard helpers
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='r' || e.key==='R'){
+      cam.rx = -18; cam.ry = 24; cam.rz = 0; cam.scale = 1;
+      applyBoardTransform(); saveCam();
+    }
+  });
+
+  // UI bindings
+  if(threeDToggle){
+    threeDToggle.addEventListener('change', ()=>{
+      cam.enabled = !!threeDToggle.checked;
+      document.body.setAttribute('data-3d', cam.enabled ? 'on' : 'off');
+      if(!cam.enabled){
+        cam.rx = 0; cam.ry = 0; cam.rz = 0; cam.scale = 1;
+      }else{
+        // Keep current saved or default slight tilt
+        if(Math.abs(cam.rx)+Math.abs(cam.ry) < 0.01){
+          cam.rx = -18; cam.ry = 24;
+        }
+      }
+      applyBoardTransform(); saveCam();
+    });
+  }
+  if(resetBtn){
+    resetBtn.addEventListener('click', ()=>{
+      cam.rx = -18; cam.ry = 24; cam.rz = 0; cam.scale = 1;
+      applyBoardTransform(); saveCam();
+    });
+  }
+
+  // When other parts of the game programmatically rotate the board (flipToMove), our observer updates the transform automatically.
+
+})();
+
+/* === 3D TOUCH CAMERA — drag to rotate (one finger / mouse) === */
+(function(){
+  const boardEl = document.getElementById('board');
+  const body = document.body;
+  const camToggle = document.getElementById('camToggle');
+  const camResetBtn = document.getElementById('camReset');
+
+  // Persist preference
+  let prefCam = null;
+  try { prefCam = localStorage.getItem('shashki_pref_cam3d'); } catch(e){}
+  const camEnabledDefault = (prefCam===null ? '1' : prefCam) === '1';
+
+  const stateCam = {
+    enabled: camEnabledDefault,
+    yaw: -25,     // rotateY degrees (left/right)
+    pitch: 25,    // rotateX degrees (up/down)
+    minPitch: -60,
+    maxPitch: 60,
+    dragging: false,
+    justDragged: false,
+    lastX: 0,
+    lastY: 0,
+    yawSpeed: 0.35,   // deg per px
+    pitchSpeed: 0.28, // deg per px (inverted)
+  };
+
+  function setEnabled(on){
+    stateCam.enabled = !!on;
+    try { localStorage.setItem('shashki_pref_cam3d', on ? '1':'0'); } catch(e){}
+    body.setAttribute('data-3d', on ? 'on' : 'off');
+    applyCamera();
+  }
+
+  function rotatedZDeg(){
+    // If the board has the 'rotated' class, we rotate the camera around Z by 180,
+    // but the CSS neutralizes .board.rotated transform so we must compose it here.
+    return boardEl.classList.contains('rotated') ? 180 : 0;
+  }
+
+  function applyCamera(){
+    if(!stateCam.enabled){
+      boardEl.style.transform = ''; // allow normal 2D css if any
+      return;
+    }
+    const rz = rotatedZDeg();
+    boardEl.style.transform = `translateZ(0px) rotateX(${stateCam.pitch}deg) rotateY(${stateCam.yaw}deg) rotateZ(${rz}deg)`;
+  }
+
+  // Public helper for click suppression after a drag
+  window.CAM = window.CAM || {};
+  window.CAM.consumeJustDragged = function(){
+    if(stateCam.justDragged){ stateCam.justDragged = false; return true; }
+    return false;
+  };
+
+  function onPointerDown(ev){
+    if(!stateCam.enabled) return;
+    stateCam.dragging = true;
+    stateCam.justDragged = false;
+    boardEl.classList.add('cam-drag');
+    try{ boardEl.setPointerCapture && boardEl.setPointerCapture(ev.pointerId); }catch(e){}
+    stateCam.lastX = ev.clientX;
+    stateCam.lastY = ev.clientY;
+  }
+  function onPointerMove(ev){
+    if(!stateCam.enabled || !stateCam.dragging) return;
+    const dx = ev.clientX - stateCam.lastX;
+    const dy = ev.clientY - stateCam.lastY;
+    if(Math.abs(dx) > 0 || Math.abs(dy) > 0){
+      stateCam.justDragged = true;
+    }
+    stateCam.lastX = ev.clientX;
+    stateCam.lastY = ev.clientY;
+    stateCam.yaw += dx * stateCam.yawSpeed;
+    stateCam.pitch -= dy * stateCam.pitchSpeed;
+    if(stateCam.pitch < stateCam.minPitch) stateCam.pitch = stateCam.minPitch;
+    if(stateCam.pitch > stateCam.maxPitch) stateCam.pitch = stateCam.maxPitch;
+    applyCamera();
+  }
+  function onPointerUp(ev){
+    if(!stateCam.enabled) return;
+    stateCam.dragging = false;
+    boardEl.classList.remove('cam-drag');
+    // Keep justDragged true for a tick to swallow the ensuing click
+    setTimeout(()=>{ stateCam.justDragged = false; }, 120);
+    try{ boardEl.releasePointerCapture && boardEl.releasePointerCapture(ev.pointerId); }catch(e){}
+  }
+
+  boardEl.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+
+  // Watch for 'rotated' class changes so Z is reapplied
+  const mo = new MutationObserver(()=>applyCamera());
+  mo.observe(boardEl, {attributes:true, attributeFilter:['class']});
+
+  // Toggle + Reset UI
+  if(camToggle){
+    camToggle.checked = stateCam.enabled;
+    camToggle.addEventListener('change', ()=> setEnabled(camToggle.checked));
+  }
+  if(camResetBtn){
+    camResetBtn.addEventListener('click', ()=>{
+      stateCam.yaw = -25;
+      stateCam.pitch = 25;
+      applyCamera();
+    });
+  }
+
+  // Initial enable/paint
+  setEnabled(stateCam.enabled);
+  applyCamera();
+})();
+
+</script>
+
+
+<script>
+// === Multiplayer (WebRTC P2P, copy-paste signaling) — v1 ===
+(function(){
+  const BY = 1, BK = -1;
+  const $ = (id)=>document.getElementById(id);
+
+  // UI elements
+  const modeSel = $('mode');
+  const panel = $('mpPanel');
+  const mpSideSel = $('mpSide');
+  const hostBtn = $('mpHost');
+  const joinBtn = $('mpJoin');
+  const copyBtn = $('mpCopy');
+  const setRemoteBtn = $('mpSetRemote');
+  const localTA = $('mpLocalCode');
+  const remoteTA = $('mpRemoteCode');
+  const statusEl = $('mpStatus');
+
+  // Networking state
+  const NET = {
+    pc: null,
+    dc: null,
+    isHost: false,
+    connected: false,
+    mySide: 1, // 1 white, -1 black
+    suppressSend: 0,
+    canMoveNow(){
+      if(state.mode !== 'mp') return true;
+      return state.turn === (NET.mySide>0? 1 : -1);
+    },
+    log(s){ try{ statusEl.textContent = s; }catch(e){} },
+    send(obj){
+      if(state.mode !== 'mp') return;
+      if(!NET.connected || !NET.dc || NET.dc.readyState!=='open') return;
+      if(NET.suppressSend>0) return;
+      try{ NET.dc.send(JSON.stringify(obj)); }catch(e){ console.warn(e); }
+    },
+    onMsg(evt){
+      let data;
+      try{ data = JSON.parse(evt.data); }catch(e){ return; }
+      if(!data || !data.t) return;
+      if(data.t==='hello'){
+        // (optional) sync later
+      } else if(data.t==='move'){
+        applyMoveFromNet(data.mv);
+      } else if(data.t==='newgame'){
+        setupNewGame();
+      } else if(data.t==='undo'){
+        undo();
+      } else if(data.t==='seat'){
+        // opponent informs his side; we don't need this strictly
+      } else if(data.t==='settings'){
+        // minimal: ignore
+      }
+    }
+  };
+  window.NET = NET; // optional for debugging
+
+  function setPanelVisible(v){
+    if(panel) panel.style.display = v ? '' : 'none';
+  }
+
+  function onModeChange(){
+    const v = modeSel.value;
+    state.mode = v;
+    setPanelVisible(v==='mp');
+    if(v!=='mp'){
+      NET.connected = false;
+      NET.pc = null; NET.dc = null;
+      statusEl.textContent = 'Offline';
+    }
+  }
+  if(modeSel){
+    modeSel.addEventListener('change', onModeChange);
+    // initialize visibility
+    onModeChange();
+  }
+
+  function chooseSideFromUI(){
+    const s = (mpSideSel && mpSideSel.value) || 'white';
+    NET.mySide = (s==='white') ? 1 : -1;
+  }
+  if(mpSideSel){
+    mpSideSel.addEventListener('change', chooseSideFromUI);
+    chooseSideFromUI();
+  }
+
+  function createPC(){
+    const pc = new RTCPeerConnection({
+      iceServers: [{urls:'stun:stun.l.google.com:19302'}]
+    });
+    pc.onconnectionstatechange = ()=>{
+      NET.connected = (pc.connectionState === 'connected');
+      statusEl.textContent = NET.connected ? 'Połączono' : pc.connectionState;
+    };
+    pc.onicegatheringstatechange = ()=>{
+      // update local code when complete
+      if(pc.iceGatheringState === 'complete'){
+        const ld = pc.localDescription;
+        if(ld) localTA.value = btoa(JSON.stringify(ld));
+      }
+    };
+    return pc;
+  }
+
+  function createDataChannel(pc, label='s'){
+    const dc = pc.createDataChannel(label);
+    dc.onopen = ()=>{ statusEl.textContent = 'Kanał danych: otwarty'; NET.connected = true; };
+    dc.onmessage = NET.onMsg;
+    dc.onclose = ()=>{ statusEl.textContent = 'Rozłączono'; NET.connected = false; };
+    return dc;
+  }
+
+  async function host(){
+    if(state.mode!=='mp') { modeSel.value='mp'; onModeChange(); }
+    chooseSideFromUI();
+    NET.isHost = true;
+    const pc = NET.pc = createPC();
+    const dc = NET.dc = createDataChannel(pc, 'shashki');
+    dc.onmessage = NET.onMsg;
+
+    pc.onicecandidate = (e)=>{
+      if(!e.candidate){
+        localTA.value = btoa(JSON.stringify(pc.localDescription));
+      }
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    statusEl.textContent = 'Utworzono pokój. Udostępnij kod.';
+  }
+
+  async function join(){
+    if(state.mode!=='mp') { modeSel.value='mp'; onModeChange(); }
+    chooseSideFromUI();
+    NET.isHost = false;
+    const pc = NET.pc = createPC();
+    pc.ondatachannel = (e)=>{
+      NET.dc = e.channel;
+      NET.dc.onmessage = NET.onMsg;
+      NET.dc.onopen = ()=>{ statusEl.textContent = 'Połączono (gość)'; NET.connected = true; };
+    };
+    pc.onicecandidate = (e)=>{
+      if(!e.candidate){
+        localTA.value = btoa(JSON.stringify(pc.localDescription));
+      }
+    };
+    statusEl.textContent = 'Wklej kod gospodarza po prawej i kliknij Ustaw.';
+  }
+
+  async function setRemote(){
+    if(!NET.pc){ statusEl.textContent = 'Najpierw Utwórz pokój lub Dołącz.'; return; }
+    const txt = (remoteTA.value || '').trim();
+    if(!txt){ statusEl.textContent = 'Brak kodu.'; return; }
+    let desc;
+    try{
+      desc = JSON.parse(atob(txt));
+    }catch(e){
+      statusEl.textContent = 'Zły kod.'; return;
+    }
+    await NET.pc.setRemoteDescription(desc);
+    if(desc.type === 'offer'){
+      const ans = await NET.pc.createAnswer();
+      await NET.pc.setLocalDescription(ans);
+      localTA.value = btoa(JSON.stringify(NET.pc.localDescription));
+      statusEl.textContent = 'Odpowiedź gotowa. Wyślij kod.';
+    } else {
+      statusEl.textContent = 'Połączono? Oczekiwanie na ICE...';
+    }
+    // Send our chosen seat to peer (optional)
+    NET.send({t:'seat', side: NET.mySide});
+  }
+
+  if(hostBtn) hostBtn.addEventListener('click', host);
+  if(joinBtn) joinBtn.addEventListener('click', join);
+  if(setRemoteBtn) setRemoteBtn.addEventListener('click', setRemote);
+  if(copyBtn) copyBtn.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(localTA.value || '');
+      statusEl.textContent = 'Skopiowano kod.';
+    }catch(e){
+      statusEl.textContent = 'Nie udało się skopiować.';
+    }
+  });
+
+  // ---- Patch gameplay to broadcast moves/new game/undo ----
+  const _endTurnCommitPending = window.endTurnCommitPending;
+  window.endTurnCommitPending = function(){
+    const mv = state.pendingMove ? JSON.parse(JSON.stringify(state.pendingMove)) : null;
+    _endTurnCommitPending.apply(this, arguments);
+    if(state.mode==='mp' && mv){
+      NET.send({t:'move', mv});
+    }
+  };
+
+  const _setupNewGame = window.setupNewGame;
+  window.setupNewGame = function(){
+    _setupNewGame.apply(this, arguments);
+    if(state.mode==='mp'){
+      NET.send({t:'newgame'});
+    }
+  };
+
+  const _undo = window.undo;
+  window.undo = function(){
+    _undo.apply(this, arguments);
+    if(state.mode==='mp'){
+      NET.send({t:'undo'});
+    }
+  };
+
+  // Block input when it's not your turn in MP
+  const _onSquareClick = window.onSquareClick;
+  window.onSquareClick = function(e){
+    if(state.mode==='mp' && !NET.canMoveNow()){
+      log('Czekaj na ruch przeciwnika.', 'warn');
+      return;
+    }
+    return _onSquareClick.apply(this, arguments);
+  };
+
+  // Apply a move received from peer without echoing back
+  function applyMoveFromNet(mv){
+    if(!mv) return;
+    NET.suppressSend++;
+    try{
+      state.pendingMove = JSON.parse(JSON.stringify(mv)); // will be consumed by endTurnCommitPending
+
+      let from = mv.from;
+      if(mv.captures && mv.captures.length>0){
+        // Do jumps in sequence
+        let cur = from;
+        for(let i=0;i<mv.path.length;i++){
+          const to = mv.path[i];
+          const ju = jumpOnce(state.board, cur, to);
+          state.board = ju.board;
+          cur = ju.landedIdx;
+        }
+        maybePromote(cur);
+      } else {
+        const to = mv.path[0];
+        performMove(from, to);
+      }
+      render();
+      endTurnCommitPending();
+    } finally {
+      NET.suppressSend--;
+    }
+  }
+
+  // Ensure UI reflects MP at start if selected by default
+  if(modeSel && modeSel.value==='mp'){
+    setPanelVisible(true);
+  }
+})();
+</script>
+
+</body>
+</html>
